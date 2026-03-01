@@ -103,6 +103,7 @@ export type Database = {
           created_at: string
           custom_label: string | null
           id: string
+          kitchen_note: string | null
           order_id: string
           product_id: string
           product_size_id: string | null
@@ -114,6 +115,7 @@ export type Database = {
           created_at?: string
           custom_label?: string | null
           id?: string
+          kitchen_note?: string | null
           order_id: string
           product_id: string
           product_size_id?: string | null
@@ -125,6 +127,7 @@ export type Database = {
           created_at?: string
           custom_label?: string | null
           id?: string
+          kitchen_note?: string | null
           order_id?: string
           product_id?: string
           product_size_id?: string | null
@@ -159,7 +162,7 @@ export type Database = {
       orders: {
         Row: {
           created_at: string
-          customer_name: string
+          customer_name: string | null
           id: string
           order_number: number
           status: string
@@ -167,7 +170,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
-          customer_name: string
+          customer_name?: string | null
           id?: string
           order_number?: number
           status?: string
@@ -175,7 +178,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
-          customer_name?: string
+          customer_name?: string | null
           id?: string
           order_number?: number
           status?: string
@@ -256,6 +259,27 @@ export type Database = {
           },
         ]
       }
+      user_profiles: {
+        Row: {
+          created_at: string
+          email: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -264,7 +288,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "staff"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -391,6 +415,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "staff"],
+    },
   },
 } as const
