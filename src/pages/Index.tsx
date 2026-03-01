@@ -8,8 +8,10 @@ import { PaymentModal } from "@/components/pos/PaymentModal";
 import { HouseSaladExtrasModal } from "@/components/pos/HouseSaladExtrasModal";
 import { useCategories, useProducts, useProductSizes, useIngredients } from "@/hooks/useMenuData";
 import { useCart } from "@/hooks/useCart";
+import { useCashRegister } from "@/hooks/useCashRegister";
 import type { Product, ProductSize, SelectedIngredient } from "@/types/pos";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Lock } from "lucide-react";
 
 const Index = () => {
   const { data: categories, isLoading: catLoading } = useCategories();
@@ -17,6 +19,7 @@ const Index = () => {
   const { data: productSizes } = useProductSizes();
   const { data: ingredients } = useIngredients();
 
+  const { isOpen: registerIsOpen } = useCashRegister();
   const cart = useCart();
 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -66,7 +69,16 @@ const Index = () => {
 
   return (
     <Layout>
-      <div className="flex flex-1 overflow-hidden">
+      <div className="relative flex flex-1 overflow-hidden">
+        {/* Overlay when register is closed */}
+        {!registerIsOpen && (
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-background/80 backdrop-blur-sm">
+            <Lock className="h-12 w-12 text-muted-foreground mb-3" />
+            <p className="text-lg font-semibold text-foreground">Caja cerrada</p>
+            <p className="text-sm text-muted-foreground">Abre la caja para comenzar a vender</p>
+          </div>
+        )}
+
         {/* Categories */}
         <aside className="w-48 shrink-0 overflow-y-auto border-r bg-card lg:w-56">
           {isLoading ? (

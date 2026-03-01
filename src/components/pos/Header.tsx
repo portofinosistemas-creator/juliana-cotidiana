@@ -1,6 +1,7 @@
 import { Home, Users, ClipboardList, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PrinterConfig } from "./PrinterConfig";
+import { CashRegisterBar } from "./CashRegister";
 import { useNavigate, useLocation } from "react-router-dom";
 
 const navItems = [
@@ -20,6 +21,7 @@ export function Header() {
         <h1 className="text-lg font-bold tracking-tight text-primary">
           JULIANA — BARRA COTIDIANA
         </h1>
+        <CashRegisterBar />
       </div>
       <nav className="flex items-center gap-1">
         {navItems.map((item) => (
