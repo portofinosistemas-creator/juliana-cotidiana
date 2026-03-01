@@ -20,6 +20,6 @@ serve(async (req) => {
     return new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
   } catch (err) {
     console.error(err);
-    return new Response(JSON.stringify({ error: err.message }), { status: 500 });
+    return new Response(JSON.stringify({ error: (err as Error).message }), { status: 500 });
   }
 });
