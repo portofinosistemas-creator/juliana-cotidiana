@@ -125,6 +125,7 @@ const Index = () => {
             onRemove={cart.removeItem}
             onClear={cart.clearCart}
             onPay={() => setShowPayment(true)}
+            onAddExtras={(item) => setHouseSaladProduct(item.product)}
           />
         </aside>
       </div>
