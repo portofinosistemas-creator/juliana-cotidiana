@@ -1,7 +1,10 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Layout } from "@/components/Layout";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
+import { useCategories, useProducts } from "@/hooks/useMenuData";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,22 +18,115 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Bluetooth, Store, Clock, RotateCcw, Check, Trash2, Plus } from "lucide-react";
+import { Bluetooth, Store, Clock, RotateCcw, Check, Trash2, Plus, QrCode, Upload, ExternalLink, Link as LinkIcon, UtensilsCrossed } from "lucide-react";
 import { toast } from "sonner";
+
+const MENU_FILE_STORAGE_KEY = "menu_file_url";
+const MENU_FILE_NAME_KEY = "menu_file_name";
+const MENU_BUCKET = import.meta.env.VITE_SUPABASE_MENU_BUCKET || "menus";
+const ALLOWED_MIME_TYPES = ["image/png", "image/jpeg", "application/pdf"];
+const ALLOWED_EXTENSIONS = [".png", ".jpg", ".jpeg", ".pdf"];
+
+const normalizeProductKey = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
 
 export default function SettingsPage() {
   const { settings, updateSettings, resetToDefaults } = useSystemSettings();
+  const { data: categories = [] } = useCategories();
+  const { data: products = [] } = useProducts();
+  const queryClient = useQueryClient();
   const {
     preferences,
-    pairClientPrinter,
-    pairKitchenPrinter,
-    unpairClientPrinter,
-    unpairKitchenPrinter,
     savePreferences,
+    getClientPrinter,
+    selectClientPrinter,
   } = useBluetootPrinter();
 
   const [localSettings, setLocalSettings] = useState(settings);
   const [isSaving, setIsSaving] = useState(false);
+  const [menuFileUrl, setMenuFileUrl] = useState<string>(() => localStorage.getItem(MENU_FILE_STORAGE_KEY) || "");
+  const [menuFileName, setMenuFileName] = useState<string>(() => localStorage.getItem(MENU_FILE_NAME_KEY) || "");
+  const [selectedMenuFile, setSelectedMenuFile] = useState<File | null>(null);
+  const [isUploadingMenu, setIsUploadingMenu] = useState(false);
+  const [newProductName, setNewProductName] = useState("");
+  const [newProductPrice, setNewProductPrice] = useState("");
+  const [newProductCategoryId, setNewProductCategoryId] = useState<string>("");
+  const [priceDraftByProductId, setPriceDraftByProductId] = useState<Record<string, string>>({});
+  const [isSavingMenu, setIsSavingMenu] = useState(false);
+  const [isLinkingPrinter, setIsLinkingPrinter] = useState(false);
+  const selectedClientPrinter = getClientPrinter();
+  const availablePrinters = useMemo(
+    () => Object.values(preferences.printers || {}),
+    [preferences.printers]
+  );
+
+  const handleLinkClientPrinter = async () => {
+    setIsLinkingPrinter(true);
+    try {
+      const printer = await selectClientPrinter();
+      toast.success(`Impresora vinculada: ${printer.name}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo vincular la impresora";
+      toast.error(message);
+    } finally {
+      setIsLinkingPrinter(false);
+    }
+  };
+
+  const uniqueProducts = useMemo(() => {
+    const uniqueByCategoryAndName = new Map<string, (typeof products)[number]>();
+
+    for (const product of products) {
+      const key = `${product.category_id}:${normalizeProductKey(product.name)}`;
+      const existing = uniqueByCategoryAndName.get(key);
+
+      if (!existing) {
+        uniqueByCategoryAndName.set(key, product);
+        continue;
+      }
+
+      const existingDate = Date.parse(existing.created_at || "");
+      const productDate = Date.parse(product.created_at || "");
+      if (!Number.isNaN(productDate) && (Number.isNaN(existingDate) || productDate < existingDate)) {
+        uniqueByCategoryAndName.set(key, product);
+      }
+    }
+
+    return Array.from(uniqueByCategoryAndName.values());
+  }, [products]);
+
+  const dessertsCategory = useMemo(
+    () =>
+      categories.find(
+        (category) =>
+          category.name
+            .trim()
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "") === "postres"
+      ) || null,
+    [categories]
+  );
+
+  useEffect(() => {
+    if (!newProductCategoryId && categories.length > 0) {
+      setNewProductCategoryId(categories[0].id);
+    }
+  }, [categories, newProductCategoryId]);
+
+  useEffect(() => {
+    const drafts: Record<string, string> = {};
+    for (const product of products) {
+      if (typeof product.price === "number") {
+        drafts[product.id] = product.price.toFixed(2);
+      }
+    }
+    setPriceDraftByProductId(drafts);
+  }, [products]);
 
   const handleSaveBusinessInfo = async () => {
     setIsSaving(true);
@@ -77,6 +173,195 @@ export default function SettingsPage() {
     }
   };
 
+  const isValidMenuFile = (file: File) => {
+    const byMime = ALLOWED_MIME_TYPES.includes(file.type);
+    const lowerName = file.name.toLowerCase();
+    const byExtension = ALLOWED_EXTENSIONS.some((ext) => lowerName.endsWith(ext));
+    return byMime || byExtension;
+  };
+
+  const handleMenuFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] || null;
+    if (!file) {
+      setSelectedMenuFile(null);
+      return;
+    }
+
+    if (!isValidMenuFile(file)) {
+      toast.error("Formato inválido. Solo se permite PNG, JPG o PDF.");
+      event.target.value = "";
+      setSelectedMenuFile(null);
+      return;
+    }
+
+    setSelectedMenuFile(file);
+  };
+
+  const handleUploadMenu = async () => {
+    if (!selectedMenuFile) {
+      toast.error("Selecciona un archivo primero.");
+      return;
+    }
+
+    setIsUploadingMenu(true);
+    try {
+      const timestamp = Date.now();
+      const safeFileName = selectedMenuFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `restaurant-menu/${timestamp}-${safeFileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from(MENU_BUCKET)
+        .upload(path, selectedMenuFile, {
+          upsert: true,
+          contentType: selectedMenuFile.type || undefined,
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      const { data } = supabase.storage.from(MENU_BUCKET).getPublicUrl(path);
+      const publicUrl = data.publicUrl;
+
+      setMenuFileUrl(publicUrl);
+      setMenuFileName(selectedMenuFile.name);
+      localStorage.setItem(MENU_FILE_STORAGE_KEY, publicUrl);
+      localStorage.setItem(MENU_FILE_NAME_KEY, selectedMenuFile.name);
+      setSelectedMenuFile(null);
+
+      toast.success("Menú cargado correctamente. QR generado.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo subir el archivo.";
+      toast.error(`Error al subir menú: ${message}`);
+    } finally {
+      setIsUploadingMenu(false);
+    }
+  };
+
+  const handleCopyMenuLink = async () => {
+    if (!menuFileUrl) return;
+    try {
+      await navigator.clipboard.writeText(menuFileUrl);
+      toast.success("Liga copiada al portapapeles");
+    } catch {
+      toast.error("No se pudo copiar la liga");
+    }
+  };
+
+  const handleClearMenu = () => {
+    setMenuFileUrl("");
+    setMenuFileName("");
+    setSelectedMenuFile(null);
+    localStorage.removeItem(MENU_FILE_STORAGE_KEY);
+    localStorage.removeItem(MENU_FILE_NAME_KEY);
+    toast.success("Referencia de menú eliminada");
+  };
+
+  const handleCreateDessertsCategory = async () => {
+    setIsSavingMenu(true);
+    try {
+      const nextOrder = categories.reduce((max, cat) => Math.max(max, cat.display_order), 0) + 1;
+      const { error } = await supabase
+        .from("categories")
+        .insert({ name: "Postres", display_order: nextOrder });
+
+      if (error) throw error;
+
+      await queryClient.invalidateQueries({ queryKey: ["categories"] });
+      toast.success("Categoría Postres creada");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo crear la categoría";
+      toast.error(message);
+    } finally {
+      setIsSavingMenu(false);
+    }
+  };
+
+  const handleCreateProduct = async () => {
+    const trimmedName = newProductName.trim();
+    const parsedPrice = Number(newProductPrice);
+    if (!trimmedName) {
+      toast.error("Ingresa el nombre del producto");
+      return;
+    }
+    if (!newProductCategoryId) {
+      toast.error("Selecciona una categoría");
+      return;
+    }
+    if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+      toast.error("Ingresa un precio válido");
+      return;
+    }
+
+    const duplicateExists = products.some(
+      (product) =>
+        product.category_id === newProductCategoryId &&
+        normalizeProductKey(product.name) === normalizeProductKey(trimmedName)
+    );
+    if (duplicateExists) {
+      toast.error("Ese producto ya existe en la categoría seleccionada");
+      return;
+    }
+
+    setIsSavingMenu(true);
+    try {
+      const nextOrder =
+        products
+          .filter((product) => product.category_id === newProductCategoryId)
+          .reduce((max, product) => Math.max(max, product.display_order), 0) + 1;
+
+      const { error } = await supabase.from("products").insert({
+        category_id: newProductCategoryId,
+        name: trimmedName,
+        price: parsedPrice,
+        is_customizable: false,
+        display_order: nextOrder,
+      });
+      if (error) throw error;
+
+      setNewProductName("");
+      setNewProductPrice("");
+      await queryClient.invalidateQueries({ queryKey: ["products"] });
+      toast.success("Producto agregado");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo agregar el producto";
+      toast.error(message);
+    } finally {
+      setIsSavingMenu(false);
+    }
+  };
+
+  const handleUpdateProductPrice = async (productId: string) => {
+    const draftPrice = priceDraftByProductId[productId];
+    const parsedPrice = Number(draftPrice);
+    if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+      toast.error("Precio inválido");
+      return;
+    }
+
+    setIsSavingMenu(true);
+    try {
+      const { error } = await supabase
+        .from("products")
+        .update({ price: parsedPrice })
+        .eq("id", productId);
+
+      if (error) throw error;
+
+      await queryClient.invalidateQueries({ queryKey: ["products"] });
+      toast.success("Precio actualizado");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo actualizar el precio";
+      toast.error(message);
+    } finally {
+      setIsSavingMenu(false);
+    }
+  };
+
+  const qrUrl = menuFileUrl
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(menuFileUrl)}`
+    : "";
+
   return (
     <Layout>
       <div className="space-y-6 p-6">
@@ -88,7 +373,7 @@ export default function SettingsPage() {
         </div>
 
         <Tabs defaultValue="business" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="business" className="gap-2">
               <Store className="h-4 w-4" />
               <span className="hidden sm:inline">Negocio</span>
@@ -100,6 +385,14 @@ export default function SettingsPage() {
             <TabsTrigger value="preferences" className="gap-2">
               <span className="h-4 w-4">⚙️</span>
               <span className="hidden sm:inline">Prefs</span>
+            </TabsTrigger>
+            <TabsTrigger value="menu-qr" className="gap-2">
+              <QrCode className="h-4 w-4" />
+              <span className="hidden sm:inline">Menú QR</span>
+            </TabsTrigger>
+            <TabsTrigger value="menu-admin" className="gap-2">
+              <UtensilsCrossed className="h-4 w-4" />
+              <span className="hidden sm:inline">Menú POS</span>
             </TabsTrigger>
             <TabsTrigger value="printers" className="gap-2">
               <Bluetooth className="h-4 w-4" />
@@ -277,28 +570,6 @@ export default function SettingsPage() {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="currency">Moneda</Label>
-                    <Select
-                      value={localSettings.currency}
-                      onValueChange={(value) =>
-                        setLocalSettings({
-                          ...localSettings,
-                          currency: value,
-                        })
-                      }
-                    >
-                      <SelectTrigger id="currency">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="MXN">Peso Mexicano (MXN)</SelectItem>
-                        <SelectItem value="USD">Dólar Estadounidense (USD)</SelectItem>
-                        <SelectItem value="EUR">Euro (EUR)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
                     <Label htmlFor="tax-rate">Tasa de Impuesto (%)</Label>
                     <Input
                       id="tax-rate"
@@ -383,9 +654,211 @@ export default function SettingsPage() {
             </Card>
           </TabsContent>
 
+          {/* TAB: Menu Admin */}
+          <TabsContent value="menu-admin" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Administrar Menú POS</CardTitle>
+                <CardDescription>
+                  Agrega productos, actualiza precios y crea la categoría Postres.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="flex flex-wrap items-end gap-3 rounded-lg border p-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="new-product-name">Nombre</Label>
+                    <Input
+                      id="new-product-name"
+                      value={newProductName}
+                      onChange={(e) => setNewProductName(e.target.value)}
+                      placeholder="Ej: Cheesecake"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="new-product-price">Precio</Label>
+                    <Input
+                      id="new-product-price"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={newProductPrice}
+                      onChange={(e) => setNewProductPrice(e.target.value)}
+                      placeholder="Ej: 65"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="new-product-category">Categoría</Label>
+                    <Select value={newProductCategoryId} onValueChange={setNewProductCategoryId}>
+                      <SelectTrigger id="new-product-category" className="w-56">
+                        <SelectValue placeholder="Selecciona categoría" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((category) => (
+                          <SelectItem key={category.id} value={category.id}>
+                            {category.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button onClick={handleCreateProduct} disabled={isSavingMenu} className="gap-2">
+                    <Plus className="h-4 w-4" />
+                    Agregar producto
+                  </Button>
+                </div>
+
+                {!dessertsCategory && (
+                  <div className="flex items-center justify-between rounded-lg border border-dashed p-3">
+                    <p className="text-sm text-muted-foreground">
+                      La categoría Postres aún no existe.
+                    </p>
+                    <Button variant="outline" onClick={handleCreateDessertsCategory} disabled={isSavingMenu}>
+                      Crear categoría Postres
+                    </Button>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold">Productos y precios</h3>
+                  <div className="space-y-2">
+                    {uniqueProducts.map((product) => (
+                      <div key={product.id} className="grid grid-cols-1 gap-2 rounded-lg border p-3 md:grid-cols-[1fr_220px_120px]">
+                        <div>
+                          <p className="text-sm font-medium">{product.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {categories.find((c) => c.id === product.category_id)?.name || "Sin categoría"}
+                          </p>
+                        </div>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={priceDraftByProductId[product.id] ?? ""}
+                          onChange={(e) =>
+                            setPriceDraftByProductId((prev) => ({
+                              ...prev,
+                              [product.id]: e.target.value,
+                            }))
+                          }
+                        />
+                        <Button
+                          variant="outline"
+                          onClick={() => handleUpdateProductPrice(product.id)}
+                          disabled={isSavingMenu}
+                        >
+                          Guardar precio
+                        </Button>
+                      </div>
+                    ))}
+                    {uniqueProducts.length === 0 && (
+                      <p className="text-sm text-muted-foreground">
+                        No hay productos disponibles.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* TAB: Menu QR */}
+          <TabsContent value="menu-qr" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Menú Digital con QR</CardTitle>
+                <CardDescription>
+                  Sube un archivo PNG, JPG o PDF para generar una liga y su código QR.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="space-y-2">
+                  <Label htmlFor="menu-file">Archivo del menú</Label>
+                  <Input
+                    id="menu-file"
+                    type="file"
+                    accept=".png,.jpg,.jpeg,.pdf,image/png,image/jpeg,application/pdf"
+                    onChange={handleMenuFileChange}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Formatos permitidos: PNG, JPG, PDF.
+                  </p>
+                </div>
+
+                {selectedMenuFile && (
+                  <div className="rounded-md border bg-muted/40 p-3 text-sm">
+                    Archivo seleccionado: <span className="font-medium">{selectedMenuFile.name}</span>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={handleUploadMenu} disabled={!selectedMenuFile || isUploadingMenu} className="gap-2">
+                    <Upload className="h-4 w-4" />
+                    {isUploadingMenu ? "Subiendo..." : "Subir y Generar QR"}
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    onClick={handleCopyMenuLink}
+                    disabled={!menuFileUrl}
+                    className="gap-2"
+                  >
+                    <LinkIcon className="h-4 w-4" />
+                    Copiar liga
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    onClick={() => menuFileUrl && window.open(menuFileUrl, "_blank", "noopener,noreferrer")}
+                    disabled={!menuFileUrl}
+                    className="gap-2"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Abrir archivo
+                  </Button>
+
+                  <Button variant="destructive" onClick={handleClearMenu} disabled={!menuFileUrl}>
+                    Limpiar
+                  </Button>
+                </div>
+
+                {menuFileUrl && (
+                  <div className="grid grid-cols-1 gap-6 rounded-lg border p-4 md:grid-cols-[300px_1fr]">
+                    <div className="flex justify-center">
+                      <img
+                        src={qrUrl}
+                        alt="Código QR del menú"
+                        className="h-[280px] w-[280px] rounded-md border bg-white p-2"
+                      />
+                    </div>
+
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-sm font-medium">Archivo activo</p>
+                        <p className="text-sm text-muted-foreground">{menuFileName || "Menú sin nombre"}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">Liga para visualizar o descargar</p>
+                        <a
+                          href={menuFileUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="break-all text-sm text-primary underline-offset-2 hover:underline"
+                        >
+                          {menuFileUrl}
+                        </a>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Escanea el QR para abrir el menú desde cualquier celular.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           {/* TAB: Printers */}
           <TabsContent value="printers" className="space-y-6">
-            {/* Printer 80mm */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -393,91 +866,73 @@ export default function SettingsPage() {
                   Impresora Cliente (80mm)
                 </CardTitle>
                 <CardDescription>
-                  Para imprimir tickets de cliente
+                  Vincula y guarda una impresora para reconexión automática
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {preferences.clientPrinter80mm ? (
-                  <div className="rounded-lg bg-green-50 p-4 dark:bg-green-900/10">
-                    <p className="mb-2 text-sm font-medium text-green-900 dark:text-green-400">
-                      ✓ Conectada
-                    </p>
-                    <p className="mb-4 text-sm text-green-800 dark:text-green-300">
-                      {preferences.clientPrinter80mm.name}
-                    </p>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={unpairClientPrinter}
-                      className="gap-2"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Desemparejar
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="rounded-lg border-2 border-dashed border-muted p-4">
-                    <p className="mb-4 text-sm text-muted-foreground">
-                      No hay impresora emparejada
-                    </p>
-                    <Button
-                      variant="outline"
-                      onClick={pairClientPrinter}
-                      className="gap-2"
-                    >
-                      <Plus className="h-4 w-4" />
-                      Emparejar Impresora
-                    </Button>
-                  </div>
-                )}
+                <div className="rounded-lg bg-muted/30 p-4">
+                  <p className="mb-2 text-sm font-medium text-foreground">
+                    {selectedClientPrinter ? "✓ Guardada" : "Pendiente"}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedClientPrinter
+                      ? `${selectedClientPrinter.name} (${selectedClientPrinter.address})`
+                      : "Vincula una impresora Bluetooth para evitar búsquedas en cada impresión"}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="client-printer-select">Impresora guardada</Label>
+                  <Select
+                    value={preferences.clientPrinterId || "AUTO_PRINTER"}
+                    onValueChange={(value) =>
+                      savePreferences({
+                        ...preferences,
+                        clientPrinterId: value,
+                      })
+                    }
+                  >
+                    <SelectTrigger id="client-printer-select">
+                      <SelectValue placeholder="Selecciona impresora" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availablePrinters.map((printer) => (
+                        <SelectItem key={printer.id} value={printer.id}>
+                          {printer.name} ({printer.address})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Button onClick={handleLinkClientPrinter} disabled={isLinkingPrinter} className="gap-2">
+                  <Bluetooth className="h-4 w-4" />
+                  {isLinkingPrinter ? "Vinculando..." : "Vincular / Cambiar impresora"}
+                </Button>
               </CardContent>
             </Card>
 
-            {/* Printer 58mm */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Bluetooth className="h-5 w-5" />
-                  Impresora Cocina (58mm)
+                  Impresora Cocina
                 </CardTitle>
                 <CardDescription>
-                  Para imprimir comandas de cocina
+                  Usa la misma impresora automática del sistema
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {preferences.kitchenPrinter58mm ? (
-                  <div className="rounded-lg bg-green-50 p-4 dark:bg-green-900/10">
-                    <p className="mb-2 text-sm font-medium text-green-900 dark:text-green-400">
-                      ✓ Conectada
-                    </p>
-                    <p className="mb-4 text-sm text-green-800 dark:text-green-300">
-                      {preferences.kitchenPrinter58mm.name}
-                    </p>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={unpairKitchenPrinter}
-                      className="gap-2"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Desemparejar
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="rounded-lg border-2 border-dashed border-muted p-4">
-                    <p className="mb-4 text-sm text-muted-foreground">
-                      No hay impresora emparejada
-                    </p>
-                    <Button
-                      variant="outline"
-                      onClick={pairKitchenPrinter}
-                      className="gap-2"
-                    >
-                      <Plus className="h-4 w-4" />
-                      Emparejar Impresora
-                    </Button>
-                  </div>
-                )}
+                <div className="rounded-lg bg-muted/30 p-4">
+                  <p className="mb-2 text-sm font-medium text-foreground">
+                    {selectedClientPrinter ? "✓ Vinculada" : "Pendiente"}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedClientPrinter
+                      ? `${selectedClientPrinter.name} (${selectedClientPrinter.address})`
+                      : "Selecciona primero una impresora de cliente"}
+                  </p>
+                </div>
               </CardContent>
             </Card>
 
@@ -493,20 +948,67 @@ export default function SettingsPage() {
                       Impresión Automática
                     </Label>
                     <p className="text-xs text-muted-foreground">
-                      Imprime automáticamente al confirmar pedido
+                      Siempre activa para la impresora seleccionada
                     </p>
                   </div>
                   <Switch
                     id="auto-print"
-                    checked={preferences.autoPrint}
+                    checked={true}
+                    disabled
+                  />
+                </div>
+
+                <div className="rounded-md border bg-muted/30 p-3">
+                  <p className="text-sm font-medium text-foreground">Modo impresión</p>
+                  <p className="text-xs text-muted-foreground">
+                    ESC/POS por Bluetooth únicamente. Fallback web/navegador deshabilitado.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label htmlFor="open-drawer-80" className="font-medium">
+                      Abrir Cajon en 80mm
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Envía pulso de apertura al cajon al imprimir ticket/corte
+                    </p>
+                  </div>
+                  <Switch
+                    id="open-drawer-80"
+                    checked={preferences.openDrawerOn80mm}
                     onCheckedChange={(checked) =>
                       savePreferences({
                         ...preferences,
-                        autoPrint: checked,
+                        openDrawerOn80mm: checked,
                       })
                     }
                   />
                 </div>
+<<<<<<< HEAD
+=======
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label htmlFor="full-cut-80" className="font-medium">
+                      Corte Completo en 80mm
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Usa corte completo en lugar de parcial para ticket/corte
+                    </p>
+                  </div>
+                  <Switch
+                    id="full-cut-80"
+                    checked={preferences.fullCutOn80mm}
+                    onCheckedChange={(checked) =>
+                      savePreferences({
+                        ...preferences,
+                        fullCutOn80mm: checked,
+                      })
+                    }
+                  />
+                </div>
+>>>>>>> origen/main
               </CardContent>
             </Card>
           </TabsContent>

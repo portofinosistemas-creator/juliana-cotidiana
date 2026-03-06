@@ -4,23 +4,67 @@ import type { CartItem } from "@/types/pos";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { NumPad } from "./NumPad";
 import { useState } from "react";
+import { formatCurrencyMXN } from "@/lib/currency";
+
+const STANDALONE_EXTRA_PRODUCT_NAMES = new Set([
+  "EXTRA SUELTO",
+  "EXTRAS SUELTOS",
+  "EXTRA INDEPENDIENTE",
+]);
+
+const normalizeText = (value: string) =>
+  value
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+const getDisplayProductName = (name: string) => {
+  const normalized = normalizeText(name);
+  if (STANDALONE_EXTRA_PRODUCT_NAMES.has(normalized)) return "Extra";
+  return name;
+};
 
 interface Props {
   items: CartItem[];
   total: number;
   onUpdateQuantity: (id: string, qty: number) => void;
+  onUpdateKitchenNote: (id: string, note: string) => void;
   onRemove: (id: string) => void;
   onClear: () => void;
   onPay: () => void;
+  payDisabled?: boolean;
+  onAddStandaloneExtra?: () => void;
+  standaloneExtraDisabled?: boolean;
 }
 
-export function CartPanel({ items, total, onUpdateQuantity, onRemove, onClear, onPay }: Props) {
+export function CartPanel({
+  items,
+  total,
+  onUpdateQuantity,
+  onUpdateKitchenNote,
+  onRemove,
+  onClear,
+  onPay,
+  payDisabled = false,
+  onAddStandaloneExtra,
+  standaloneExtraDisabled = false,
+}: Props) {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
 
   const handleNumPadInput = (value: number) => {
     if (selectedItemId && value > 0) {
       onUpdateQuantity(selectedItemId, value);
     }
+  };
+
+  const handleKitchenNote = (id: string, currentNote?: string) => {
+    const note = window.prompt(
+      "Nota para cocina (deja vacio para eliminarla):",
+      currentNote || ""
+    );
+    if (note === null) return;
+    onUpdateKitchenNote(id, note);
   };
 
   return (
@@ -51,7 +95,7 @@ export function CartPanel({ items, total, onUpdateQuantity, onRemove, onClear, o
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-foreground truncate">
-                      {item.product.name}
+                      {getDisplayProductName(item.product.name)}
                       {item.productSize && (
                         <span className="ml-1 text-muted-foreground">
                           ({item.productSize.name})
@@ -61,6 +105,11 @@ export function CartPanel({ items, total, onUpdateQuantity, onRemove, onClear, o
                     {item.customLabel && (
                       <p className="mt-0.5 text-xs text-muted-foreground truncate">
                         {item.customLabel}
+                      </p>
+                    )}
+                    {item.kitchenNote && (
+                      <p className="mt-0.5 text-xs font-medium text-foreground">
+                        Nota cocina: {item.kitchenNote}
                       </p>
                     )}
                   </div>
@@ -76,6 +125,15 @@ export function CartPanel({ items, total, onUpdateQuantity, onRemove, onClear, o
                 </div>
                 <div className="mt-1.5 flex items-center justify-between">
                   <div className="flex items-center gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleKitchenNote(item.id, item.kitchenNote);
+                      }}
+                      className="rounded border border-border px-1.5 py-0.5 text-[11px] hover:bg-accent"
+                    >
+                      Nota
+                    </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -97,7 +155,7 @@ export function CartPanel({ items, total, onUpdateQuantity, onRemove, onClear, o
                     </button>
                   </div>
                   <span className="font-semibold text-foreground">
-                    ${item.subtotal.toFixed(0)}
+                    {formatCurrencyMXN(item.subtotal, 0)}
                   </span>
                 </div>
               </div>
@@ -109,9 +167,19 @@ export function CartPanel({ items, total, onUpdateQuantity, onRemove, onClear, o
       <NumPad onSubmit={handleNumPadInput} />
 
       <div className="border-t p-3 space-y-2">
+        {onAddStandaloneExtra && (
+          <Button
+            variant="secondary"
+            className="w-full"
+            onClick={onAddStandaloneExtra}
+            disabled={standaloneExtraDisabled}
+          >
+            Agregar extra
+          </Button>
+        )}
         <div className="flex items-center justify-between text-lg font-bold">
           <span className="text-foreground">Total</span>
-          <span className="text-primary">${total.toFixed(0)}</span>
+          <span className="text-primary">{formatCurrencyMXN(total, 0)}</span>
         </div>
         <div className="flex gap-2">
           <Button
@@ -125,7 +193,7 @@ export function CartPanel({ items, total, onUpdateQuantity, onRemove, onClear, o
           <Button
             className="flex-1"
             onClick={onPay}
-            disabled={items.length === 0}
+            disabled={items.length === 0 || payDisabled}
           >
             Pagar
           </Button>

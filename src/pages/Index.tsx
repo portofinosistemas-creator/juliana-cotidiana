@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Layout } from "@/components/Layout";
 import { CategoryList } from "@/components/pos/CategoryList";
 import { ProductGrid } from "@/components/pos/ProductGrid";
@@ -11,7 +11,27 @@ import { useCart } from "@/hooks/useCart";
 import { useCashRegister } from "@/hooks/useCashRegister";
 import type { Product, ProductSize, SelectedIngredient } from "@/types/pos";
 import { Skeleton } from "@/components/ui/skeleton";
+<<<<<<< HEAD
 import { Lock } from "lucide-react";
+=======
+import { toast } from "sonner";
+import { isCashRegisterOpenToday } from "@/lib/cash-register";
+
+const STANDALONE_EXTRA_PRODUCT_CANDIDATES = new Set([
+  "EXTRA SUELTO",
+  "EXTRAS SUELTOS",
+  "EXTRA INDEPENDIENTE",
+  "EXTRAS",
+]);
+const HIDDEN_CATEGORY_NAMES = new Set(["extras"]);
+
+const normalizeText = (value: string) =>
+  value
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+>>>>>>> origen/main
 
 const Index = () => {
   const { data: categories, isLoading: catLoading } = useCategories();
@@ -25,22 +45,103 @@ const Index = () => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [customizeProduct, setCustomizeProduct] = useState<Product | null>(null);
   const [showPayment, setShowPayment] = useState(false);
-  const [houseSaladProduct, setHouseSaladProduct] = useState<Product | null>(null);
+  const [cashRegisterOpen, setCashRegisterOpen] = useState(false);
+  const [showStandaloneExtras, setShowStandaloneExtras] = useState(false);
+  const [houseSaladProduct, setHouseSaladProduct] = useState<{
+    product: Product;
+    size?: ProductSize;
+  } | null>(null);
 
-  // Auto-select first category
-  if (!selectedCategory && categories && categories.length > 0) {
-    setSelectedCategory(categories[0].id);
-  }
+  const visibleCategories = useMemo(() => {
+    if (!categories || categories.length === 0) return [];
 
-  const selectedCategoryData = categories?.find((category) => category.id === selectedCategory) || null;
+    const normalizeCategoryName = (value: string) =>
+      value
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
 
-  const filteredProducts =
-    products?.filter((p) => p.category_id === selectedCategory) || [];
+    const deduped = new Map<string, (typeof categories)[number]>();
+
+    for (const category of categories) {
+      const key = normalizeCategoryName(category.name);
+      if (HIDDEN_CATEGORY_NAMES.has(key)) continue;
+      if (!deduped.has(key)) {
+        deduped.set(key, category);
+      }
+    }
+
+    return [...deduped.values()];
+  }, [categories]);
+
+  useEffect(() => {
+    setCashRegisterOpen(isCashRegisterOpenToday());
+  }, []);
+
+  useEffect(() => {
+    const syncCashRegisterState = () => setCashRegisterOpen(isCashRegisterOpenToday());
+    window.addEventListener("focus", syncCashRegisterState);
+    document.addEventListener("visibilitychange", syncCashRegisterState);
+    return () => {
+      window.removeEventListener("focus", syncCashRegisterState);
+      document.removeEventListener("visibilitychange", syncCashRegisterState);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (visibleCategories.length === 0) return;
+
+    const selectedIsVisible = visibleCategories.some((category) => category.id === selectedCategory);
+    if (!selectedCategory || !selectedIsVisible) {
+      setSelectedCategory(visibleCategories[0].id);
+    }
+  }, [selectedCategory, visibleCategories]);
+
+  const selectedCategoryData =
+    visibleCategories.find((category) => category.id === selectedCategory) || null;
+
+  const filteredProducts = useMemo(() => {
+    const categoryProducts = products?.filter((p) => p.category_id === selectedCategory) || [];
+    const dedupedByName = new Map<string, Product>();
+
+    for (const product of categoryProducts) {
+      const key = normalizeText(product.name);
+      const existing = dedupedByName.get(key);
+      if (!existing) {
+        dedupedByName.set(key, product);
+        continue;
+      }
+
+      // Keep the product with lower display_order, fallback to oldest created_at.
+      if (product.display_order < existing.display_order) {
+        dedupedByName.set(key, product);
+        continue;
+      }
+
+      if (
+        product.display_order === existing.display_order &&
+        new Date(product.created_at).getTime() < new Date(existing.created_at).getTime()
+      ) {
+        dedupedByName.set(key, product);
+      }
+    }
+
+    return [...dedupedByName.values()].sort((a, b) => a.display_order - b.display_order);
+  }, [products, selectedCategory]);
 
   const customizableSizes =
     customizeProduct && productSizes
       ? productSizes.filter((s) => s.product_id === customizeProduct.id)
       : [];
+
+  const standaloneExtrasProduct = useMemo(
+    () =>
+      (products || []).find((product) =>
+        STANDALONE_EXTRA_PRODUCT_CANDIDATES.has(normalizeText(product.name))
+      ) || null,
+    [products]
+  );
 
   const handleAddToCart = (product: Product, price: number, size?: ProductSize) => {
     cart.addItem(product, price, 1, size);
@@ -60,12 +161,34 @@ const Index = () => {
     product: Product,
     unitPrice: number,
     customizations: SelectedIngredient[],
-    label: string
+    label: string,
+    productSize?: ProductSize
   ) => {
-    cart.addItem(product, unitPrice, 1, undefined, customizations, label);
+    cart.addItem(product, unitPrice, 1, productSize, customizations, label);
   };
 
   const isLoading = catLoading || prodLoading;
+
+  const refreshCashRegisterState = () => {
+    setCashRegisterOpen(isCashRegisterOpenToday());
+  };
+
+  const handleOpenPayment = () => {
+    refreshCashRegisterState();
+    if (!isCashRegisterOpenToday()) {
+      toast.error("Caja cerrada. Debes registrar apertura de caja para poder cobrar.");
+      return;
+    }
+    setShowPayment(true);
+  };
+
+  const handleOpenStandaloneExtras = () => {
+    if (!standaloneExtrasProduct) {
+      toast.error("No se encontró el producto base de extras. Ejecuta la migración de Extras.");
+      return;
+    }
+    setShowStandaloneExtras(true);
+  };
 
   return (
     <Layout>
@@ -89,7 +212,7 @@ const Index = () => {
             </div>
           ) : (
             <CategoryList
-              categories={categories || []}
+              categories={visibleCategories}
               selectedId={selectedCategory}
               onSelect={setSelectedCategory}
             />
@@ -111,7 +234,7 @@ const Index = () => {
               productSizes={productSizes || []}
               onAddToCart={handleAddToCart}
               onCustomize={setCustomizeProduct}
-              onCustomizeHouseSalad={setHouseSaladProduct}
+              onCustomizeHouseSalad={(product, size) => setHouseSaladProduct({ product, size })}
             />
           )}
         </main>
@@ -122,9 +245,12 @@ const Index = () => {
             items={cart.items}
             total={cart.total}
             onUpdateQuantity={cart.updateQuantity}
+            onUpdateKitchenNote={cart.updateKitchenNote}
             onRemove={cart.removeItem}
             onClear={cart.clearCart}
-            onPay={() => setShowPayment(true)}
+            onPay={handleOpenPayment}
+            payDisabled={!cashRegisterOpen}
+            onAddStandaloneExtra={handleOpenStandaloneExtras}
           />
         </aside>
       </div>
@@ -145,8 +271,21 @@ const Index = () => {
         <HouseSaladExtrasModal
           open={!!houseSaladProduct}
           onClose={() => setHouseSaladProduct(null)}
-          product={houseSaladProduct}
+          product={houseSaladProduct.product}
+          productSize={houseSaladProduct.size}
           ingredients={ingredients || []}
+          onAddToCart={handleHouseSaladAdd}
+        />
+      )}
+
+      {showStandaloneExtras && standaloneExtrasProduct && (
+        <HouseSaladExtrasModal
+          open={showStandaloneExtras}
+          onClose={() => setShowStandaloneExtras(false)}
+          product={standaloneExtrasProduct}
+          ingredients={ingredients || []}
+          title="Extras independientes"
+          requireAtLeastOneSelection
           onAddToCart={handleHouseSaladAdd}
         />
       )}
@@ -158,6 +297,7 @@ const Index = () => {
         items={cart.items}
         total={cart.total}
         onOrderComplete={cart.clearCart}
+        canProcessPayment={cashRegisterOpen}
       />
     </Layout>
   );

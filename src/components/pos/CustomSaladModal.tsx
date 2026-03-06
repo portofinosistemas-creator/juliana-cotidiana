@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -10,7 +11,14 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Ingredient, Product, ProductSize, SelectedIngredient } from "@/types/pos";
 import { SALAD_CONFIGS } from "@/types/pos";
+import {
+  isAllowedSaladProtein,
+  isAllowedSaladTopping,
+  isPremiumProteinIngredient,
+  isPremiumToppingIngredient,
+} from "@/lib/salad-rules";
 import { Check } from "lucide-react";
+import { formatCurrencyMXN } from "@/lib/currency";
 
 interface Props {
   open: boolean;
@@ -39,30 +47,32 @@ export function CustomSaladModal({
   const [selectedSizeId, setSelectedSizeId] = useState<string | null>(null);
   const [selectedProteins, setSelectedProteins] = useState<string[]>([]);
   const [selectedToppings, setSelectedToppings] = useState<string[]>([]);
-  const [selectedCrocante, setSelectedCrocante] = useState<string | null>(null);
+  const [selectedCrocantes, setSelectedCrocantes] = useState<string[]>([]);
   const [selectedAderezos, setSelectedAderezos] = useState<string[]>([]);
 
   const selectedSize = sizes.find((s) => s.id === selectedSizeId);
   const config = selectedSize ? SALAD_CONFIGS[selectedSize.name] : null;
 
-  const proteins = ingredients.filter((i) => i.type === "proteina");
-  const toppings = ingredients.filter((i) => i.type === "topping");
+  const proteins = ingredients.filter(isAllowedSaladProtein);
+  const toppings = ingredients.filter(isAllowedSaladTopping);
   const crocantes = ingredients.filter((i) => i.type === "crocante");
   const aderezos = ingredients.filter((i) => i.type === "aderezo");
 
   const calculatedPrice = useMemo(() => {
-    if (!config) return 0;
-    let price = config.basePrice;
+    if (!config || !selectedSize) return 0;
+    // Use live DB size price as base to avoid desync with hardcoded defaults.
+    let price = selectedSize.price;
 
     // Proteins
     const selProteins = proteins.filter((p) => selectedProteins.includes(p.id));
     let included = 0;
     for (const p of selProteins) {
+      const isPremium = isPremiumProteinIngredient(p);
       if (included < config.proteinLimit) {
         included++;
-        if (p.is_premium) price += 25; // premium always costs $25
+        if (isPremium) price += 25; // premium always costs $25
       } else {
-        price += p.is_premium ? 25 : 20; // extras
+        price += isPremium ? 25 : 20; // extras
       }
     }
 
@@ -70,12 +80,18 @@ export function CustomSaladModal({
     const selToppings = toppings.filter((t) => selectedToppings.includes(t.id));
     let tIncluded = 0;
     for (const t of selToppings) {
+      const isPremium = isPremiumToppingIngredient(t);
       if (tIncluded < config.toppingLimit) {
         tIncluded++;
-        if (t.is_premium) price += 15; // premium always costs $15
+        if (isPremium) price += 15; // premium always costs $15
       } else {
-        price += t.is_premium ? 15 : 10; // extras
+        price += isPremium ? 15 : 10; // extras
       }
+    }
+
+    // Crocantes: first included, rest $10
+    if (selectedCrocantes.length > 1) {
+      price += (selectedCrocantes.length - 1) * 10;
     }
 
     // Aderezos: first included, rest $15
@@ -84,14 +100,23 @@ export function CustomSaladModal({
     }
 
     return price;
-  }, [config, selectedProteins, selectedToppings, selectedAderezos, proteins, toppings]);
+  }, [
+    config,
+    selectedSize,
+    selectedProteins,
+    selectedToppings,
+    selectedCrocantes,
+    selectedAderezos,
+    proteins,
+    toppings,
+  ]);
 
   const reset = () => {
     setStep(0);
     setSelectedSizeId(null);
     setSelectedProteins([]);
     setSelectedToppings([]);
-    setSelectedCrocante(null);
+    setSelectedCrocantes([]);
     setSelectedAderezos([]);
   };
 
@@ -119,12 +144,13 @@ export function CustomSaladModal({
     const selP = proteins.filter((p) => selectedProteins.includes(p.id));
     let pIncluded = 0;
     for (const p of selP) {
+      const isPremium = isPremiumProteinIngredient(p);
       let cost = 0;
       if (pIncluded < config.proteinLimit) {
         pIncluded++;
-        if (p.is_premium) cost = 25;
+        if (isPremium) cost = 25;
       } else {
-        cost = p.is_premium ? 25 : 20;
+        cost = isPremium ? 25 : 20;
       }
       allSelected.push({ ingredient: p, extraCost: cost });
       buildLabel.push(p.name);
@@ -133,25 +159,28 @@ export function CustomSaladModal({
     const selT = toppings.filter((t) => selectedToppings.includes(t.id));
     let tInc = 0;
     for (const t of selT) {
+      const isPremium = isPremiumToppingIngredient(t);
       let cost = 0;
       if (tInc < config.toppingLimit) {
         tInc++;
-        if (t.is_premium) cost = 15;
+        if (isPremium) cost = 15;
       } else {
-        cost = t.is_premium ? 15 : 10;
+        cost = isPremium ? 15 : 10;
       }
       allSelected.push({ ingredient: t, extraCost: cost });
+      buildLabel.push(t.name);
     }
 
-    if (selectedCrocante) {
-      const c = crocantes.find((x) => x.id === selectedCrocante)!;
-      allSelected.push({ ingredient: c, extraCost: 0 });
+    selectedCrocantes.forEach((cId, index) => {
+      const c = crocantes.find((x) => x.id === cId)!;
+      allSelected.push({ ingredient: c, extraCost: index === 0 ? 0 : 10 });
       buildLabel.push(c.name);
-    }
+    });
 
     selectedAderezos.forEach((aId, i) => {
       const a = aderezos.find((x) => x.id === aId)!;
       allSelected.push({ ingredient: a, extraCost: i === 0 ? 0 : 15 });
+      buildLabel.push(a.name);
     });
 
     const label = buildLabel.join(", ");
@@ -166,6 +195,9 @@ export function CustomSaladModal({
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-foreground">Arma tu Ensalada</DialogTitle>
+          <DialogDescription className="text-muted-foreground">
+            Elige tamaño e ingredientes para personalizar tu ensalada antes de agregarla al carrito.
+          </DialogDescription>
           <div className="flex gap-1 mt-2">
             {steps.map((s, i) => (
               <div
@@ -197,7 +229,7 @@ export function CustomSaladModal({
                   )}
                 >
                   <p className="text-lg font-bold text-foreground">{size.name}</p>
-                  <p className="text-xl font-bold text-primary">${size.price.toFixed(0)}</p>
+                  <p className="text-xl font-bold text-primary">{formatCurrencyMXN(size.price, 0)}</p>
                 </button>
               ))}
             </div>
@@ -206,7 +238,7 @@ export function CustomSaladModal({
           {step === 1 && config && (
             <div>
               <p className="mb-2 text-xs text-muted-foreground">
-                Incluidas: {config.proteinLimit} | Premium (+$25) | Extra: $20/$25
+                Incluidas: {config.proteinLimit} | Premium (+{formatCurrencyMXN(25, 0)}) | Extra: {formatCurrencyMXN(20, 0)}/{formatCurrencyMXN(25, 0)}
               </p>
               <div className="grid grid-cols-2 gap-2">
                 {proteins.map((p) => {
@@ -224,7 +256,7 @@ export function CustomSaladModal({
                         {sel && <Check className="h-3 w-3 text-primary-foreground" />}
                       </div>
                       <span className="text-foreground">{p.name}</span>
-                      {p.is_premium && (
+                      {isPremiumProteinIngredient(p) && (
                         <span className="ml-auto text-xs font-medium text-warning">★</span>
                       )}
                     </button>
@@ -237,7 +269,7 @@ export function CustomSaladModal({
           {step === 2 && config && (
             <div>
               <p className="mb-2 text-xs text-muted-foreground">
-                Incluidos: {config.toppingLimit} | Premium ($15) | Extra: $10/$15
+                Incluidos: {config.toppingLimit} | Premium ({formatCurrencyMXN(15, 0)}) | Extra: {formatCurrencyMXN(10, 0)}/{formatCurrencyMXN(15, 0)}
               </p>
               <div className="grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto">
                 {toppings.map((t) => {
@@ -255,7 +287,7 @@ export function CustomSaladModal({
                         {sel && <Check className="h-3 w-3 text-primary-foreground" />}
                       </div>
                       <span className="text-foreground truncate">{t.name}</span>
-                      {t.is_premium && (
+                      {isPremiumToppingIngredient(t) && (
                         <span className="ml-auto text-xs font-medium text-warning shrink-0">★</span>
                       )}
                     </button>
@@ -269,16 +301,16 @@ export function CustomSaladModal({
             <div className="space-y-4">
               <div>
                 <h4 className="mb-2 text-sm font-semibold text-foreground">
-                  Crocante (1 incluido)
+                  Crocantes (1 incluido, extras {formatCurrencyMXN(10, 0)} c/u)
                 </h4>
                 <div className="grid grid-cols-2 gap-2">
                   {crocantes.map((c) => (
                     <button
                       key={c.id}
-                      onClick={() => setSelectedCrocante(c.id === selectedCrocante ? null : c.id)}
+                      onClick={() => toggleSelection(c.id, selectedCrocantes, setSelectedCrocantes)}
                       className={cn(
                         "rounded-lg border p-2.5 text-center text-sm transition-colors",
-                        selectedCrocante === c.id
+                        selectedCrocantes.includes(c.id)
                           ? "border-primary bg-accent"
                           : "border-border hover:bg-muted"
                       )}
@@ -290,7 +322,7 @@ export function CustomSaladModal({
               </div>
               <div>
                 <h4 className="mb-2 text-sm font-semibold text-foreground">
-                  Aderezos (1 incluido, extras $15 c/u)
+                  Aderezos (1 incluido, extras {formatCurrencyMXN(15, 0)} c/u)
                 </h4>
                 <div className="grid grid-cols-2 gap-2">
                   {aderezos.map((a) => {
@@ -319,7 +351,7 @@ export function CustomSaladModal({
 
         <div className="flex items-center justify-between border-t pt-3">
           <p className="text-lg font-bold text-primary">
-            Total: ${calculatedPrice.toFixed(0)}
+            Total: {formatCurrencyMXN(calculatedPrice, 0)}
           </p>
         </div>
 

@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Layout } from "@/components/Layout";
 import { useOrders } from "@/hooks/useOrders";
+import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -13,6 +14,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -28,8 +30,51 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { ChevronRight, X } from "lucide-react";
+import { ChevronRight, Printer } from "lucide-react";
 import type { OrderWithItems } from "@/hooks/useOrders";
+import {
+  closeCashRegisterSession,
+  getCashCuts,
+  getCashOpenings,
+  getOpenCashRegisterSessionToday,
+  getCashRegisterSales,
+  getCashMovements,
+  getTodaySalesRange,
+  openCashRegisterSession,
+  registerCashCut,
+  registerCashOpening,
+  registerCashMovement,
+  type CashCutRecord,
+  type CashOpening,
+  type CashMovement,
+  type CashMovementType,
+  type CashRegisterSale,
+} from "@/lib/cash-register";
+import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { formatCurrencyMXN } from "@/lib/currency";
+
+const CASH_DENOMINATIONS = [
+  { key: "500", label: "$500", value: 500 },
+  { key: "200", label: "$200", value: 200 },
+  { key: "100", label: "$100", value: 100 },
+  { key: "50", label: "$50", value: 50 },
+  { key: "20", label: "$20", value: 20 },
+  { key: "10", label: "$10", value: 10 },
+  { key: "5", label: "$5", value: 5 },
+  { key: "2", label: "$2", value: 2 },
+  { key: "1", label: "$1", value: 1 },
+];
+
+function createInitialCounts(): Record<string, number> {
+  return Object.fromEntries(CASH_DENOMINATIONS.map((den) => [den.key, 0]));
+}
+
+interface SoldProductSummary {
+  name: string;
+  quantity: number;
+  total: number;
+}
 
 export default function OrdersPage() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -39,6 +84,29 @@ export default function OrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<OrderWithItems | null>(
     null
   );
+  const [cashCutOpen, setCashCutOpen] = useState(false);
+  const [cashOpeningOpen, setCashOpeningOpen] = useState(false);
+  const [cashMovementOpen, setCashMovementOpen] = useState(false);
+  const [cashMovementType, setCashMovementType] = useState<CashMovementType>("retiro");
+  const [openingCashCounts, setOpeningCashCounts] = useState<Record<string, number>>(createInitialCounts);
+  const [cashCounts, setCashCounts] = useState<Record<string, number>>(createInitialCounts);
+  const [salesForCut, setSalesForCut] = useState<CashRegisterSale[]>([]);
+  const [openingForCut, setOpeningForCut] = useState<CashOpening | null>(null);
+  const [movementsForCut, setMovementsForCut] = useState<CashMovement[]>([]);
+  const [cutsForToday, setCutsForToday] = useState<CashCutRecord[]>([]);
+  const [soldProductsForCut, setSoldProductsForCut] = useState<SoldProductSummary[]>([]);
+  const [isFallbackSales, setIsFallbackSales] = useState(false);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [openingAmount, setOpeningAmount] = useState("");
+  const [openingNote, setOpeningNote] = useState("");
+  const [movementAmount, setMovementAmount] = useState("");
+  const [movementReason, setMovementReason] = useState("");
+  const printer = useBluetootPrinter();
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setIsTouchDevice(window.matchMedia("(pointer: coarse)").matches);
+  }, []);
 
   const { orders, isLoading, updateOrderStatus, isUpdating } = useOrders({
     status: statusFilter === "all" ? undefined : statusFilter,
@@ -69,6 +137,398 @@ export default function OrdersPage() {
       default:
         return status;
     }
+  };
+
+  const expectedCash = useMemo(
+    () =>
+      salesForCut
+        .filter((sale) => sale.paymentMethod === "efectivo")
+        .reduce((sum, sale) => sum + sale.total, 0),
+    [salesForCut]
+  );
+
+  const countedCash = useMemo(
+    () =>
+      CASH_DENOMINATIONS.reduce(
+        (sum, denomination) => sum + denomination.value * (cashCounts[denomination.key] || 0),
+        0
+      ),
+    [cashCounts]
+  );
+  const openingCountedCash = useMemo(
+    () =>
+      CASH_DENOMINATIONS.reduce(
+        (sum, denomination) => sum + denomination.value * (openingCashCounts[denomination.key] || 0),
+        0
+      ),
+    [openingCashCounts]
+  );
+
+  const openingAmountForCut = openingForCut?.amount || 0;
+  const withdrawalsForCut = useMemo(
+    () => movementsForCut.filter((entry) => entry.type === "retiro"),
+    [movementsForCut]
+  );
+  const depositsForCut = useMemo(
+    () => movementsForCut.filter((entry) => entry.type === "ingreso"),
+    [movementsForCut]
+  );
+  const totalWithdrawals = useMemo(
+    () => withdrawalsForCut.reduce((sum, entry) => sum + entry.amount, 0),
+    [withdrawalsForCut]
+  );
+  const totalDeposits = useMemo(
+    () => depositsForCut.reduce((sum, entry) => sum + entry.amount, 0),
+    [depositsForCut]
+  );
+  const cardSalesTotal = useMemo(
+    () =>
+      salesForCut
+        .filter((sale) => sale.paymentMethod === "tarjeta")
+        .reduce((sum, sale) => sum + sale.total, 0),
+    [salesForCut]
+  );
+  const cardTransactionsCount = useMemo(
+    () => salesForCut.filter((sale) => sale.paymentMethod === "tarjeta").length,
+    [salesForCut]
+  );
+  const expectedCashNet = openingAmountForCut + expectedCash + totalDeposits - totalWithdrawals;
+  const cashDifference = countedCash - expectedCashNet;
+
+  const loadTodaySales = () => {
+    const { from, to } = getTodaySalesRange();
+    return getCashRegisterSales({ dateFrom: from, dateTo: to });
+  };
+  const loadTodayMovements = () => {
+    const { from, to } = getTodaySalesRange();
+    return getCashMovements({ dateFrom: from, dateTo: to });
+  };
+
+  const loadTodayOpening = async () => {
+    try {
+      const openSession = await getOpenCashRegisterSessionToday();
+      if (openSession) {
+        return {
+          id: openSession.id,
+          amount: openSession.openingAmount,
+          note: openSession.notes || "Apertura de caja",
+          createdAt: openSession.openedAt,
+          sessionId: openSession.id,
+          denominations: openSession.openingDenominations,
+        } as CashOpening;
+      }
+    } catch {
+      // Si falla Supabase, usamos respaldo local.
+    }
+
+    const { from, to } = getTodaySalesRange();
+    const openings = getCashOpenings({ dateFrom: from, dateTo: to });
+    return openings.length > 0 ? openings[openings.length - 1] : null;
+  };
+
+  const loadTodayCuts = () => {
+    const { from, to } = getTodaySalesRange();
+    return getCashCuts({ dateFrom: from, dateTo: to });
+  };
+
+  const loadTodaySoldProducts = async (): Promise<SoldProductSummary[]> => {
+    const { from, to } = getTodaySalesRange();
+    const { data, error } = await supabase
+      .from("orders")
+      .select(
+        `
+        created_at,
+        status,
+        order_items(
+          quantity,
+          subtotal,
+          product:products(name)
+        )
+      `
+      )
+      .eq("status", "pagado")
+      .gte("created_at", from.toISOString())
+      .lte("created_at", to.toISOString());
+
+    if (error) {
+      throw error;
+    }
+
+    const productMap = new Map<string, SoldProductSummary>();
+    for (const order of data || []) {
+      for (const item of order.order_items || []) {
+        const name = item.product?.name || "Producto";
+        const existing = productMap.get(name) || { name, quantity: 0, total: 0 };
+        existing.quantity += Number(item.quantity || 0);
+        existing.total += Number(item.subtotal || 0);
+        productMap.set(name, existing);
+      }
+    }
+
+    return [...productMap.values()].sort((a, b) => b.quantity - a.quantity || b.total - a.total);
+  };
+
+  const loadTodayPaidOrdersFallback = async (): Promise<CashRegisterSale[]> => {
+    const { from, to } = getTodaySalesRange();
+    const { data, error } = await supabase
+      .from("orders")
+      .select("id, order_number, customer_name, total, created_at")
+      .eq("status", "pagado")
+      .gte("created_at", from.toISOString())
+      .lte("created_at", to.toISOString())
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      throw error;
+    }
+
+    return (data || []).map((order) => ({
+      orderId: order.id,
+      orderNumber: order.order_number,
+      customerName: order.customer_name || "Mostrador",
+      total: order.total,
+      // The schema does not persist payment method in orders yet.
+      paymentMethod: "efectivo",
+      createdAt: order.created_at,
+    }));
+  };
+
+  const handleOpenCashCut = async () => {
+    const todaySales = loadTodaySales();
+    const todayMovements = loadTodayMovements();
+    const todayOpening = await loadTodayOpening();
+    if (!todayOpening) {
+      toast.error("Primero debes registrar la apertura de caja del día.");
+      setCashOpeningOpen(true);
+      return;
+    }
+
+    setSoldProductsForCut([]);
+    setMovementsForCut(todayMovements);
+    setOpeningForCut(todayOpening);
+    setCutsForToday(loadTodayCuts());
+    try {
+      const productsSummary = await loadTodaySoldProducts();
+      setSoldProductsForCut(productsSummary);
+    } catch {
+      setSoldProductsForCut([]);
+      toast.error("No se pudo cargar el desglose de productos del día.");
+    }
+    if (todaySales.length > 0) {
+      setIsFallbackSales(false);
+      setSalesForCut(todaySales);
+      setCashCutOpen(true);
+      return;
+    }
+
+    try {
+      const fallbackSales = await loadTodayPaidOrdersFallback();
+      setIsFallbackSales(fallbackSales.length > 0);
+      setSalesForCut(fallbackSales);
+      setCashCutOpen(true);
+
+      if (fallbackSales.length === 0) {
+        toast.info("No hay ventas registradas hoy. Puedes capturar conteo e imprimir en cero.");
+      } else {
+        toast.warning("Se cargaron ventas desde pedidos; método de pago asumido como efectivo.");
+      }
+    } catch {
+      setIsFallbackSales(false);
+      setSalesForCut([]);
+      setMovementsForCut(todayMovements);
+      setCashCutOpen(true);
+      toast.error("No se pudieron cargar las ventas del día.");
+    }
+  };
+
+  const handleRegisterOpening = async () => {
+    const normalizedOpeningAmount = openingAmount.trim() === "" ? `${openingCountedCash}` : openingAmount;
+    const amount = Number.parseFloat(normalizedOpeningAmount);
+    if (!Number.isFinite(amount) || amount < 0) {
+      toast.error("Ingresa un monto válido para la apertura (0 o mayor).");
+      return;
+    }
+
+    let sessionId: string | undefined;
+    const entries = CASH_DENOMINATIONS.map((denomination) => ({
+      label: denomination.label,
+      value: denomination.value,
+      quantity: openingCashCounts[denomination.key] || 0,
+    }));
+
+    try {
+      const session = await openCashRegisterSession({
+        openingAmount: amount,
+        openingDenominations: entries,
+        notes: openingNote.trim() || "Apertura de caja",
+      });
+      sessionId = session.id;
+    } catch {
+      toast.warning("No se pudo sincronizar la apertura en la nube. Se guardará localmente.");
+    }
+
+    const saved = registerCashOpening({
+      amount,
+      note: openingNote.trim() || "Apertura de caja",
+      sessionId,
+      denominations: entries,
+    });
+
+    setOpeningForCut(saved);
+    setOpeningAmount("");
+    setOpeningNote("");
+    setOpeningCashCounts(createInitialCounts());
+    setCashOpeningOpen(false);
+    toast.success(`Apertura registrada por ${formatCurrencyMXN(saved.amount)}`);
+    if (typeof window !== "undefined") {
+      setTimeout(() => {
+        window.location.assign("/");
+      }, 250);
+    }
+  };
+
+  const handleRegisterCashMovement = () => {
+    const amount = Number.parseFloat(movementAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("Ingresa un monto válido.");
+      return;
+    }
+
+    const saved = registerCashMovement({
+      type: cashMovementType,
+      amount,
+      reason:
+        movementReason.trim() ||
+        (cashMovementType === "ingreso" ? "Ingreso a caja" : "Retiro de caja"),
+    });
+
+    setMovementsForCut(loadTodayMovements());
+    setMovementAmount("");
+    setMovementReason("");
+    setCashMovementOpen(false);
+    toast.success(
+      `${cashMovementType === "ingreso" ? "Ingreso" : "Retiro"} registrado por ${formatCurrencyMXN(saved.amount)}`
+    );
+  };
+
+  const setOpeningDenominationCount = (key: string, nextValue: number) => {
+    const safeValue = Number.isFinite(nextValue) && nextValue > 0 ? Math.floor(nextValue) : 0;
+    setOpeningCashCounts((prev) => ({ ...prev, [key]: safeValue }));
+  };
+
+  const setDenominationCount = (key: string, nextValue: number) => {
+    const safeValue = Number.isFinite(nextValue) && nextValue > 0 ? Math.floor(nextValue) : 0;
+    setCashCounts((prev) => ({ ...prev, [key]: safeValue }));
+  };
+
+  const handlePrintCashCutToday = async () => {
+    if (!openingForCut) {
+      toast.error("No hay apertura de caja registrada para hoy.");
+      setCashCutOpen(false);
+      setCashOpeningOpen(true);
+      return;
+    }
+
+    const generatedAt = new Date().toLocaleDateString("es-MX", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    const entries = CASH_DENOMINATIONS.map((denomination) => ({
+      label: denomination.label,
+      value: denomination.value,
+      quantity: cashCounts[denomination.key] || 0,
+    }));
+
+    try {
+      await printer.printCashCutTicket(
+        salesForCut,
+        generatedAt,
+        "CORTE DE CAJA (HOY)",
+        {
+          expectedCash: expectedCashNet,
+          countedCash,
+          difference: cashDifference,
+          entries,
+        },
+        {
+          opening: openingForCut
+            ? {
+                amount: openingForCut.amount,
+                note: openingForCut.note,
+                createdAt: openingForCut.createdAt,
+              }
+            : null,
+          products: soldProductsForCut,
+          deposits: depositsForCut.map((entry) => ({
+            amount: entry.amount,
+            reason: entry.reason,
+            createdAt: entry.createdAt,
+          })),
+          withdrawals: withdrawalsForCut.map((entry) => ({
+            amount: entry.amount,
+            reason: entry.reason,
+            createdAt: entry.createdAt,
+          })),
+          cardTransactions: salesForCut
+            .filter((sale) => sale.paymentMethod === "tarjeta")
+            .map((sale) => ({
+              orderNumber: sale.orderNumber,
+              customerName: sale.customerName,
+              total: sale.total,
+              createdAt: sale.createdAt,
+            })),
+        }
+      );
+    } catch {
+      toast.error("No se pudo imprimir el corte. No se registró el cierre.");
+      return;
+    }
+
+    const cashSalesTotal = salesForCut
+      .filter((sale) => sale.paymentMethod === "efectivo")
+      .reduce((sum, sale) => sum + sale.total, 0);
+
+    const cardSalesTotalLocal = salesForCut
+      .filter((sale) => sale.paymentMethod === "tarjeta")
+      .reduce((sum, sale) => sum + sale.total, 0);
+
+    const activeSessionId = openingForCut.sessionId;
+    if (activeSessionId) {
+      try {
+        await closeCashRegisterSession({
+          sessionId: activeSessionId,
+          closingAmount: countedCash,
+          expectedAmount: expectedCashNet,
+          difference: cashDifference,
+          closingDenominations: entries,
+          notes: "Corte de caja",
+        });
+      } catch {
+        toast.warning("No se pudo sincronizar el cierre en la nube. Se guardará localmente.");
+      }
+    }
+
+    const savedCut = registerCashCut({
+      expectedCash: expectedCashNet,
+      countedCash,
+      difference: cashDifference,
+      openingAmount: openingForCut.amount,
+      salesCount: salesForCut.length,
+      cashSalesTotal,
+      cardSalesTotal: cardSalesTotalLocal,
+      depositsTotal: totalDeposits,
+      withdrawalsTotal: totalWithdrawals,
+      entries,
+      note: "CORTE DE CAJA (HOY)",
+      sessionId: openingForCut.sessionId,
+    });
+
+    setCutsForToday(loadTodayCuts());
+    toast.success(`Corte registrado correctamente (folio ${savedCut.id.slice(0, 8)}).`);
   };
 
   return (
@@ -116,6 +576,47 @@ export default function OrdersPage() {
             </SelectContent>
           </Select>
         </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          className="sm:ml-auto"
+          onClick={() => setCashOpeningOpen(true)}
+        >
+          Apertura de Caja
+        </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            setCashMovementType("retiro");
+            setCashMovementOpen(true);
+          }}
+        >
+          Retirar Efectivo
+        </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            setCashMovementType("ingreso");
+            setCashMovementOpen(true);
+          }}
+        >
+          Ingresar Efectivo
+        </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          className="gap-2"
+          onClick={handleOpenCashCut}
+        >
+          <Printer className="h-4 w-4" />
+          Corte de Caja (Hoy)
+        </Button>
       </div>
 
       {/* Tabla de Pedidos */}
@@ -157,7 +658,7 @@ export default function OrdersPage() {
                   </TableCell>
                   <TableCell>{order.customer_name || "---"}</TableCell>
                   <TableCell className="font-semibold">
-                    ${order.total.toFixed(0)}
+                    {formatCurrencyMXN(order.total, 0)}
                   </TableCell>
                   <TableCell>
                     <Badge
@@ -189,6 +690,402 @@ export default function OrdersPage() {
         )}
       </div>
 
+      <Dialog open={cashCutOpen} onOpenChange={setCashCutOpen}>
+        <DialogContent className="w-[95vw] max-w-xl max-h-[90vh] overflow-y-auto md:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Corte de Caja (Hoy)</DialogTitle>
+            <DialogDescription>
+              Revisa ventas, conteo de efectivo y registra el corte del día.
+            </DialogDescription>
+          </DialogHeader>
+          {isFallbackSales && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Ventas cargadas desde pedidos pagados de hoy. El método de pago se asume como efectivo.
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-7">
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Ventas registradas</p>
+              <p className="text-xl font-bold text-foreground">{salesForCut.length}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Apertura</p>
+              <p className="text-xl font-bold text-foreground">{formatCurrencyMXN(openingAmountForCut)}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Efectivo esperado</p>
+              <p className="text-xl font-bold text-foreground">{formatCurrencyMXN(expectedCashNet, 0)}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Tarjeta ({cardTransactionsCount})</p>
+              <p className="text-xl font-bold text-blue-700">{formatCurrencyMXN(cardSalesTotal)}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Ingresos a caja</p>
+              <p className="text-xl font-bold text-emerald-700">{formatCurrencyMXN(totalDeposits)}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Retiros de efectivo</p>
+              <p className="text-xl font-bold text-amber-700">{formatCurrencyMXN(totalWithdrawals)}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Efectivo contado</p>
+              <p className="text-xl font-bold text-primary">{formatCurrencyMXN(countedCash)}</p>
+            </div>
+          </div>
+
+          <div className="max-h-[30vh] overflow-y-auto rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Denominación</TableHead>
+                  <TableHead className="w-28 text-right">Cantidad</TableHead>
+                  <TableHead className="w-28 text-right">Subtotal</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {CASH_DENOMINATIONS.map((denomination) => {
+                  const quantity = cashCounts[denomination.key] || 0;
+                  const subtotal = denomination.value * quantity;
+                  return (
+                    <TableRow key={denomination.key}>
+                      <TableCell>{denomination.label}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 w-7 px-0"
+                            onClick={() => setDenominationCount(denomination.key, quantity - 1)}
+                          >
+                            -
+                          </Button>
+                          <Input
+                            type="number"
+                            min="0"
+                            value={quantity}
+                            className="h-7 w-16 text-right"
+                            readOnly={isTouchDevice}
+                            inputMode="numeric"
+                            enterKeyHint="done"
+                            onChange={(event) => {
+                              const raw = Number.parseInt(event.target.value || "0", 10);
+                              const next = Number.isNaN(raw) || raw < 0 ? 0 : raw;
+                              setDenominationCount(denomination.key, next);
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 w-7 px-0"
+                            onClick={() => setDenominationCount(denomination.key, quantity + 1)}
+                          >
+                            +
+                          </Button>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {formatCurrencyMXN(subtotal)}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="rounded-lg border p-3">
+            <p className="mb-2 text-sm font-medium text-foreground">Productos vendidos</p>
+            <div className="max-h-32 space-y-1 overflow-y-auto text-sm">
+              {soldProductsForCut.length === 0 ? (
+                <p className="text-muted-foreground">Sin productos vendidos hoy.</p>
+              ) : (
+                soldProductsForCut.map((product) => (
+                  <div key={product.name} className="flex items-center justify-between gap-2">
+                    <span className="truncate">{product.name} x{product.quantity}</span>
+                    <span className="font-medium">{formatCurrencyMXN(product.total)}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
+            <div className="rounded-lg border p-3">
+              <p className="mb-2 text-sm font-medium text-foreground">Apertura de caja</p>
+              <div className="max-h-32 space-y-1 overflow-y-auto text-sm">
+                {!openingForCut ? (
+                  <p className="text-muted-foreground">Sin apertura registrada hoy.</p>
+                ) : (
+                  <div className="rounded border p-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium">{formatCurrencyMXN(openingForCut.amount)}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {format(new Date(openingForCut.createdAt), "HH:mm", { locale: es })}
+                      </span>
+                    </div>
+                    <p className="truncate text-xs text-muted-foreground">{openingForCut.note}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <p className="mb-2 text-sm font-medium text-foreground">Ingresos a caja</p>
+              <div className="max-h-32 space-y-1 overflow-y-auto text-sm">
+                {depositsForCut.length === 0 ? (
+                  <p className="text-muted-foreground">Sin ingresos registrados hoy.</p>
+                ) : (
+                  depositsForCut.map((entry) => (
+                    <div key={entry.id} className="rounded border p-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-emerald-700">{formatCurrencyMXN(entry.amount)}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {format(new Date(entry.createdAt), "HH:mm", { locale: es })}
+                        </span>
+                      </div>
+                      <p className="truncate text-xs text-muted-foreground">{entry.reason}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <p className="mb-2 text-sm font-medium text-foreground">Retiros de efectivo</p>
+              <div className="max-h-32 space-y-1 overflow-y-auto text-sm">
+                {withdrawalsForCut.length === 0 ? (
+                  <p className="text-muted-foreground">Sin retiros registrados hoy.</p>
+                ) : (
+                  withdrawalsForCut.map((entry) => (
+                    <div key={entry.id} className="rounded border p-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-amber-700">{formatCurrencyMXN(entry.amount)}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {format(new Date(entry.createdAt), "HH:mm", { locale: es })}
+                        </span>
+                      </div>
+                      <p className="truncate text-xs text-muted-foreground">{entry.reason}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <p className="mb-2 text-sm font-medium text-foreground">Transacciones con tarjeta</p>
+              <div className="max-h-32 space-y-1 overflow-y-auto text-sm">
+                {salesForCut.filter((sale) => sale.paymentMethod === "tarjeta").length === 0 ? (
+                  <p className="text-muted-foreground">Sin pagos con tarjeta hoy.</p>
+                ) : (
+                  salesForCut
+                    .filter((sale) => sale.paymentMethod === "tarjeta")
+                    .map((sale) => (
+                      <div key={`${sale.orderId}-card`} className="flex items-center justify-between gap-2 rounded border p-2">
+                        <span className="truncate">#{sale.orderNumber} {sale.customerName}</span>
+                        <span className="font-medium">{formatCurrencyMXN(sale.total)}</span>
+                      </div>
+                    ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <span className="text-sm font-medium text-foreground">Diferencia (contado - esperado neto)</span>
+            <span
+              className={`text-lg font-bold ${cashDifference < 0 ? "text-red-600" : cashDifference > 0 ? "text-amber-600" : "text-green-600"}`}
+            >
+              {formatCurrencyMXN(cashDifference)}
+            </span>
+          </div>
+
+          <div className="rounded-lg border p-3">
+            <p className="mb-2 text-sm font-medium text-foreground">Cortes registrados hoy</p>
+            <div className="max-h-32 space-y-1 overflow-y-auto text-sm">
+              {cutsForToday.length === 0 ? (
+                <p className="text-muted-foreground">Sin cortes registrados hoy.</p>
+              ) : (
+                cutsForToday.map((cut) => (
+                  <div key={cut.id} className="rounded border p-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium">Folio {cut.id.slice(0, 8)}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {format(new Date(cut.createdAt), "HH:mm", { locale: es })}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between text-xs">
+                      <span>Esperado {formatCurrencyMXN(cut.expectedCash)}</span>
+                      <span>Contado {formatCurrencyMXN(cut.countedCash)}</span>
+                      <span className={cut.difference === 0 ? "text-green-600" : "text-amber-700"}>
+                        Dif. {formatCurrencyMXN(cut.difference)}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setCashCounts(createInitialCounts())}
+            >
+              Limpiar conteo
+            </Button>
+            <Button className="ml-auto gap-2" onClick={handlePrintCashCutToday}>
+              <Printer className="h-4 w-4" />
+              Registrar e imprimir corte 80mm
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={cashOpeningOpen} onOpenChange={setCashOpeningOpen}>
+        <DialogContent className="w-[95vw] max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Apertura de Caja</DialogTitle>
+            <DialogDescription>
+              Captura el fondo inicial para abrir la caja. Puedes abrir con 0.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-foreground">Monto inicial</label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={openingAmount}
+                onChange={(event) => setOpeningAmount(event.target.value)}
+                placeholder="Ej. 0 o 1000"
+                inputMode="decimal"
+                enterKeyHint="done"
+              />
+              <p className="text-xs text-muted-foreground">
+                Total del tabulador: {formatCurrencyMXN(openingCountedCash)}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-foreground">Nota</label>
+              <Input
+                value={openingNote}
+                onChange={(event) => setOpeningNote(event.target.value)}
+                placeholder="Fondo inicial"
+              />
+            </div>
+            <div className="max-h-56 overflow-x-auto overflow-y-auto rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Denominación</TableHead>
+                    <TableHead className="w-24 text-right">Cantidad</TableHead>
+                    <TableHead className="w-24 text-right">Subtotal</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {CASH_DENOMINATIONS.map((denomination) => {
+                    const quantity = openingCashCounts[denomination.key] || 0;
+                    const subtotal = denomination.value * quantity;
+                    return (
+                      <TableRow key={`open-${denomination.key}`}>
+                        <TableCell>{denomination.label}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 w-8 px-0"
+                              onClick={() => setOpeningDenominationCount(denomination.key, quantity - 1)}
+                            >
+                              -
+                            </Button>
+                            <Input
+                              type="number"
+                              min="0"
+                              value={quantity}
+                              className="h-8 w-14 text-right"
+                              inputMode="numeric"
+                              enterKeyHint="done"
+                              onChange={(event) => {
+                                const raw = Number.parseInt(event.target.value || "0", 10);
+                                const next = Number.isNaN(raw) || raw < 0 ? 0 : raw;
+                                setOpeningDenominationCount(denomination.key, next);
+                              }}
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 w-8 px-0"
+                              onClick={() => setOpeningDenominationCount(denomination.key, quantity + 1)}
+                            >
+                              +
+                            </Button>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatCurrencyMXN(subtotal)}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+            <Button className="w-full" onClick={handleRegisterOpening}>
+              Guardar apertura
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={cashMovementOpen} onOpenChange={setCashMovementOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              {cashMovementType === "ingreso" ? "Ingreso de Efectivo" : "Retiro de Efectivo"}
+            </DialogTitle>
+            <DialogDescription>
+              Registra el monto y motivo del movimiento de caja.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-foreground">Monto</label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={movementAmount}
+                onChange={(event) => setMovementAmount(event.target.value)}
+                placeholder="Ej. 500"
+                inputMode="decimal"
+                enterKeyHint="done"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-foreground">Motivo</label>
+              <Input
+                value={movementReason}
+                onChange={(event) => setMovementReason(event.target.value)}
+                placeholder="Caja chica, depósito, etc."
+              />
+            </div>
+            <Button className="w-full" onClick={handleRegisterCashMovement}>
+              Guardar {cashMovementType}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Modal Detalle */}
       <Dialog open={!!selectedOrder} onOpenChange={() => setSelectedOrder(null)}>
         <DialogContent className="max-w-2xl">
@@ -196,6 +1093,9 @@ export default function OrdersPage() {
             <DialogTitle>
               Pedido #{selectedOrder?.order_number}
             </DialogTitle>
+            <DialogDescription>
+              Consulta el detalle completo del pedido seleccionado.
+            </DialogDescription>
           </DialogHeader>
 
           {selectedOrder && (
@@ -219,7 +1119,7 @@ export default function OrdersPage() {
                 <div>
                   <p className="text-xs text-muted-foreground">Total</p>
                   <p className="text-lg font-bold text-primary">
-                    ${selectedOrder.total.toFixed(0)}
+                    {formatCurrencyMXN(selectedOrder.total, 0)}
                   </p>
                 </div>
                 <div>
@@ -268,7 +1168,7 @@ export default function OrdersPage() {
                           )}
                       </div>
                       <div className="text-right font-semibold text-foreground">
-                        ${item.subtotal.toFixed(0)}
+                        {formatCurrencyMXN(item.subtotal, 0)}
                       </div>
                     </div>
                   ))}
