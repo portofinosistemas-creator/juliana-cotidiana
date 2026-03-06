@@ -1,4 +1,4 @@
-import { Trash2, Minus, Plus } from "lucide-react";
+import { Trash2, Minus, Plus, PlusCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { CartItem } from "@/types/pos";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -12,9 +12,10 @@ interface Props {
   onRemove: (id: string) => void;
   onClear: () => void;
   onPay: () => void;
+  onAddExtras?: (item: CartItem) => void;
 }
 
-export function CartPanel({ items, total, onUpdateQuantity, onRemove, onClear, onPay }: Props) {
+export function CartPanel({ items, total, onUpdateQuantity, onRemove, onClear, onPay, onAddExtras }: Props) {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
 
   const handleNumPadInput = (value: number) => {
@@ -22,6 +23,8 @@ export function CartPanel({ items, total, onUpdateQuantity, onRemove, onClear, o
       onUpdateQuantity(selectedItemId, value);
     }
   };
+
+  const selectedItem = items.find((i) => i.id === selectedItemId) || null;
 
   return (
     <div className="flex h-full flex-col border-l bg-card">
@@ -107,6 +110,22 @@ export function CartPanel({ items, total, onUpdateQuantity, onRemove, onClear, o
       </ScrollArea>
 
       <NumPad onSubmit={handleNumPadInput} />
+
+      {/* Agregar extras button */}
+      <div className="px-2 pb-1">
+        <Button
+          variant="secondary"
+          className="w-full"
+          disabled={!selectedItem}
+          onClick={() => {
+            if (selectedItem && onAddExtras) {
+              onAddExtras(selectedItem);
+            }
+          }}
+        >
+          Agregar extra
+        </Button>
+      </div>
 
       <div className="border-t p-3 space-y-2">
         <div className="flex items-center justify-between text-lg font-bold">
