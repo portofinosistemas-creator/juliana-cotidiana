@@ -1,13 +1,15 @@
 import { cn } from "@/lib/utils";
 import type { Category } from "@/types/pos";
-import { Salad, Sandwich, Coffee, CookingPot, Leaf } from "lucide-react";
+import { Salad, Sandwich, Coffee, CookingPot, Leaf, BaggageClaim, Cake } from "lucide-react";
 
 const categoryIcons: Record<string, React.ElementType> = {
   "Ensaladas de la Casa": Salad,
   "Arma tu Ensalada": Leaf,
   "Sándwiches": Sandwich,
+  "Baguettes": BaggageClaim,
   "Toasts": CookingPot,
   "Bebidas": Coffee,
+  "Postres": Cake,
 };
 
 interface Props {
