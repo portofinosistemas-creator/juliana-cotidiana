@@ -1,6 +1,7 @@
-import { textToCP850, buildKitchenOrderBytes, buildClientTicketBytes } from "@/lib/escpos";
+import { generateKitchenOrderHTML, generateClientTicketHTML } from "@/lib/printer-formats";
 import type { CartItem } from "@/types/pos";
 
+// Mock data para prueba
 const mockProduct = {
   id: "123",
   category_id: "cat-1",
@@ -27,53 +28,89 @@ const mockCartItem: CartItem = {
   quantity: 1,
   unitPrice: 125,
   subtotal: 125,
-  customizations: [{ ingredient: mockIngredient, extraCost: 0 }],
+  customizations: [
+    {
+      ingredient: mockIngredient,
+      extraCost: 0,
+    },
+  ],
   customLabel: "Sin croutones",
 };
 
-describe("ESC/POS CP850 encoding", () => {
-  test("ASCII characters pass through unchanged", () => {
-    const bytes = textToCP850("Hello");
-    expect(bytes).toEqual([72, 101, 108, 108, 111]);
-  });
-
-  test("Spanish accented characters convert to CP850", () => {
-    const bytes = textToCP850("á");
-    expect(bytes).toEqual([160]);
-  });
-
-  test("ñ converts correctly", () => {
-    expect(textToCP850("ñ")).toEqual([164]);
-    expect(textToCP850("Ñ")).toEqual([165]);
-  });
-
-  test("Emojis are replaced with space", () => {
-    const bytes = textToCP850("🍽️");
-    // Emojis should become spaces (code 32)
-    expect(bytes.every((b) => b === 32)).toBe(true);
-  });
-
-  test("buildKitchenOrderBytes starts with ESC @ (init) and ESC t 2 (CP850)", () => {
-    const bytes = buildKitchenOrderBytes(
-      [{ quantity: 1, productName: "Test" }],
-      1, "Juan", "01/01/2026 10:00",
+describe("Printer Formats", () => {
+  test("generateKitchenOrderHTML debe incluir nombre del cliente", () => {
+    const html = generateKitchenOrderHTML(
+      [mockCartItem],
+      123,
+      "Juan",
+      "23/02/2026 10:30"
     );
-    // First two bytes: ESC @ (0x1B 0x40)
-    expect(bytes[0]).toBe(0x1B);
-    expect(bytes[1]).toBe(0x40);
-    // Next three bytes: ESC t 2 (0x1B 0x74 0x02)
-    expect(bytes[2]).toBe(0x1B);
-    expect(bytes[3]).toBe(0x74);
-    expect(bytes[4]).toBe(0x02);
+
+    expect(html).toContain("JUAN"); // En mayúsculas
+    expect(html).toContain("COMANDA #123");
   });
 
-  test("buildClientTicketBytes ends with cut command", () => {
-    const bytes = buildClientTicketBytes(
-      [{ quantity: 1, productName: "Test", subtotal: 100 }],
-      100, 1, "Juan", "01/01/2026 10:00",
+  test("generateKitchenOrderHTML debe incluir ingredientes", () => {
+    const html = generateKitchenOrderHTML(
+      [mockCartItem],
+      123,
+      "Juan",
+      "23/02/2026 10:30"
     );
-    const last3 = bytes.slice(-3);
-    // GS V 1 (partial cut)
-    expect(last3).toEqual([0x1D, 0x56, 0x01]);
+
+    expect(html).toContain("Pollo");
+    expect(html).toContain("Sin croutones");
+  });
+
+  test("generateKitchenOrderHTML debe incluir nombre del producto", () => {
+    const html = generateKitchenOrderHTML(
+      [mockCartItem],
+      123,
+      "Juan",
+      "23/02/2026 10:30"
+    );
+
+    expect(html).toContain("Ensalada House");
+  });
+
+  test("generateClientTicketHTML debe incluir total", () => {
+    const html = generateClientTicketHTML(
+      [mockCartItem],
+      125,
+      123,
+      "Juan",
+      "23/02/2026 10:30"
+    );
+
+    expect(html).toContain("$125");
+  });
+
+  test("generateClientTicketHTML debe incluir nombre del cliente", () => {
+    const html = generateClientTicketHTML(
+      [mockCartItem],
+      125,
+      123,
+      "Juan",
+      "23/02/2026 10:30"
+    );
+
+    expect(html).toContain("Juan");
+  });
+
+  test("HTML debe ser válido", () => {
+    const html = generateKitchenOrderHTML(
+      [mockCartItem],
+      123,
+      "Juan",
+      "23/02/2026 10:30"
+    );
+
+    // Verificar estructura HTML básica
+    expect(html).toContain("<html>");
+    expect(html).toContain("</html>");
+    expect(html).toContain("<head>");
+    expect(html).toContain("</head>");
+    expect(html).toContain("<body>");
+    expect(html).toContain("</body>");
   });
 });

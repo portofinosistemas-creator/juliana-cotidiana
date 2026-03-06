@@ -13,8 +13,6 @@ import { toast } from "sonner";
 import { Printer, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
-<<<<<<< HEAD
-=======
 import {
   registerPaidSale,
   type PaymentMethod,
@@ -41,7 +39,6 @@ const normalizeText = (value: string) =>
 
 const getDisplayProductName = (name: string) =>
   STANDALONE_EXTRA_PRODUCT_NAMES.has(normalizeText(name)) ? "Extra" : name;
->>>>>>> origen/main
 
 interface Props {
   open: boolean;
@@ -69,8 +66,6 @@ export function PaymentModal({
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [allowManualNameInput, setAllowManualNameInput] = useState(false);
   const printer = useBluetootPrinter();
-<<<<<<< HEAD
-=======
   const quickNames = ["Barra", "Para llevar"];
 
   const parseCashAmount = (value: string): number => {
@@ -189,7 +184,6 @@ export function PaymentModal({
       customizationIngredientIds: (item.customizations || []).map((c) => c.ingredient.id),
     })),
   });
->>>>>>> origen/main
 
   const handlePay = async () => {
     if (!canProcessPayment) {
@@ -266,33 +260,8 @@ export function PaymentModal({
       if (printer.preferences.autoPrint) {
         setIsAutoPrinting(true);
         try {
-<<<<<<< HEAD
-          const now = new Date();
-          const dateStr = now.toLocaleDateString("es-MX", {
-            day: "2-digit",
-            month: "2-digit",
-            year: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          });
-
-          await printer.printKitchenOrder(
-            items,
-            order.order_number,
-            customerName.trim(),
-            dateStr
-          );
-          await printer.printClientTicket(
-            items,
-            total,
-            order.order_number,
-            customerName.trim(),
-            dateStr
-          );
-=======
           await printer.selectClientPrinter();
           await printCombinedTickets(order.order_number, normalizedCustomerName);
->>>>>>> origen/main
         } catch (err) {
           console.error("Error en impresión automática:", err);
           toast.warning(`No se pudo imprimir automáticamente: ${getErrorMessage(err)}`);
@@ -327,35 +296,7 @@ export function PaymentModal({
   const printTicket = async () => {
     setIsAutoPrinting(true);
     try {
-<<<<<<< HEAD
-      const now = new Date();
-      const dateStr = now.toLocaleDateString("es-MX", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-
-      if (type === "cliente") {
-        await printer.printClientTicket(
-          items,
-          total,
-          savedOrderNumber,
-          customerName,
-          dateStr
-        );
-      } else {
-        await printer.printKitchenOrder(
-          items,
-          savedOrderNumber,
-          customerName,
-          dateStr
-        );
-      }
-=======
       await printCombinedTickets(savedOrderNumber, customerName);
->>>>>>> origen/main
     } catch (err) {
       console.error("Error al imprimir:", err);
       toast.error(`Error al imprimir: ${getErrorMessage(err)}`);

@@ -1,7 +1,4 @@
 import type { CartItem } from "@/types/pos";
-<<<<<<< HEAD
-import { buildKitchenOrderBytes, buildClientTicketBytes } from "./escpos";
-=======
 import type { CashRegisterSale } from "@/lib/cash-register";
 const PRINT_GATEWAY_URL = import.meta.env.VITE_PRINT_GATEWAY_URL?.trim();
 const PRINT_GATEWAY_TOKEN = import.meta.env.VITE_PRINT_GATEWAY_TOKEN?.trim();
@@ -49,28 +46,17 @@ export interface CashCutDetails {
   withdrawals?: CashCutWithdrawalSummary[];
   cardTransactions?: CashCutCardTransactionSummary[];
 }
->>>>>>> origen/main
 
-/** Map CartItem[] to the shape expected by ESC/POS builders */
-function mapItemsForKitchen(items: CartItem[]) {
-  return items.map((item) => ({
-    quantity: item.quantity,
-    productName: item.product.name,
-    sizeName: item.productSize?.name,
-    customLabel: item.customLabel || undefined,
-    ingredients: item.customizations?.map((c) => c.ingredient.name) || [],
-  }));
+interface PrinterConfig {
+  width: number; // mm
+  charsPerLine: number;
+  fontSize: "small" | "medium" | "large";
 }
 
-function mapItemsForTicket(items: CartItem[]) {
-  return items.map((item) => ({
-    quantity: item.quantity,
-    productName: item.product.name,
-    sizeName: item.productSize?.name,
-    customLabel: item.customLabel || undefined,
-    subtotal: item.subtotal,
-  }));
-}
+const PRINTER_CONFIGS: Record<string, PrinterConfig> = {
+  "80mm": { width: 80, charsPerLine: 42, fontSize: "medium" },
+  "58mm": { width: 58, charsPerLine: 32, fontSize: "small" },
+};
 
 const STANDALONE_EXTRA_PRODUCT_NAMES = new Set([
   "EXTRA SUELTO",
@@ -150,57 +136,17 @@ function escapeHtml(value: string): string {
 }
 
 /**
- * Generate raw ESC/POS bytes for kitchen order (58mm)
+ * Genera HTML para ticket de cliente (80mm)
  */
-<<<<<<< HEAD
-export function generateKitchenOrderBytes(
-  items: CartItem[],
-  orderNumber: number | null,
-  customerName: string,
-  dateStr: string,
-): number[] {
-  return buildKitchenOrderBytes(
-    mapItemsForKitchen(items),
-    orderNumber,
-    customerName,
-    dateStr,
-  );
-}
-
-/**
- * Generate raw ESC/POS bytes for client ticket (80mm)
- */
-export function generateClientTicketBytes(
-=======
 type ClientTicketStyle = "clasico" | "minimal";
 const CLIENT_TICKET_STYLE: ClientTicketStyle = "clasico";
 
 export function generateClientTicketHTML(
->>>>>>> origen/main
   items: CartItem[],
   total: number,
   orderNumber: number | null,
   customerName: string,
   dateStr: string,
-<<<<<<< HEAD
-): number[] {
-  return buildClientTicketBytes(
-    mapItemsForTicket(items),
-    total,
-    orderNumber,
-    customerName,
-    dateStr,
-  );
-}
-
-/**
- * Send raw ESC/POS bytes to a Bluetooth printer via Web Bluetooth API.
- */
-export async function printToDevice(
-  _deviceAddress: string,
-  bytes: number[],
-  printerSize: "80mm" | "58mm",
-=======
   paymentMethodLabel: string = "Efectivo"
 ): string {
   const config = PRINTER_CONFIGS["80mm"];
@@ -898,63 +844,13 @@ export async function printMultipleToDevice(
       fullCut?: boolean;
     };
   }>
->>>>>>> origen/main
 ): Promise<void> {
   if (!navigator.bluetooth) {
     throw new Error("Web Bluetooth API no disponible en este navegador");
   }
-  const printData = bytes;
 
-<<<<<<< HEAD
-  try {
-    const device = await navigator.bluetooth.requestDevice({
-      filters: [{ services: ["00001101-0000-1000-8000-00805f9b34fb"] }],
-      optionalServices: [
-        "00001101-0000-1000-8000-00805f9b34fb",
-        "0000180a-0000-1000-8000-00805f9b34fb",
-      ],
-    });
-
-    if (!device) throw new Error("No se selecciono dispositivo");
-
-    const server = await device.gatt?.connect();
-    if (!server) throw new Error("No se pudo conectar a GATT server");
-
-    const service = await server.getPrimaryService("00001101-0000-1000-8000-00805f9b34fb");
-
-    let characteristic;
-    try {
-      characteristic = await service.getCharacteristic("2a19");
-    } catch {
-      const characteristics = await service.getCharacteristics();
-      characteristic = characteristics.find(
-        (c) => c.properties.write || c.properties.writeWithoutResponse,
-      );
-      if (!characteristic) throw new Error("No se encontro caracteristica escribible");
-    }
-
-    // Send in chunks (Android limit ~512 bytes)
-    const CHUNK_SIZE = 512;
-    for (let i = 0; i < printData.length; i += CHUNK_SIZE) {
-      const chunk = printData.slice(i, Math.min(i + CHUNK_SIZE, printData.length));
-      const buffer = new Uint8Array(chunk);
-      if (characteristic.properties.writeWithoutResponse) {
-        await characteristic.writeValueWithoutResponse(buffer);
-      } else {
-        await characteristic.writeValue(buffer);
-      }
-      await new Promise((r) => setTimeout(r, 50));
-    }
-
-    await new Promise((r) => setTimeout(r, 200));
-    device.gatt?.disconnect();
-  } catch (error) {
-    console.error(`Error de impresion ESC/POS (${printerSize}):`, error);
-    throw error;
-=======
   if (jobs.length === 0) {
     return;
->>>>>>> origen/main
   }
 
   const printData = jobs.flatMap((job) => {
@@ -1006,8 +902,6 @@ export async function printMultipleToDevice(
     }
   });
 }
-<<<<<<< HEAD
-=======
 
 /**
  * Convierte HTML a comandos ESC/POS para impresoras térmicas
@@ -1477,4 +1371,3 @@ export function printViaBrowser(htmlContent: string, title: string = "Impresión
   void title;
   throw new Error("Modo ESC/POS estricto: impresión web/html deshabilitada");
 }
->>>>>>> origen/main
