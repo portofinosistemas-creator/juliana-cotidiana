@@ -248,9 +248,14 @@ const Index = () => {
             onUpdateKitchenNote={cart.updateKitchenNote}
             onRemove={cart.removeItem}
             onClear={cart.clearCart}
+<<<<<<< HEAD
             onPay={handleOpenPayment}
             payDisabled={!cashRegisterOpen}
             onAddStandaloneExtra={handleOpenStandaloneExtras}
+=======
+            onPay={() => setShowPayment(true)}
+            onAddExtras={(item) => setHouseSaladProduct(item.product)}
+>>>>>>> 5f9f36c572e74e0818426916ec812d5f80d28e05
           />
         </aside>
       </div>

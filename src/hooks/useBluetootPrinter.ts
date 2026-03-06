@@ -92,9 +92,23 @@ function normalizePreferences(input?: Partial<PrinterPreferences>): PrinterPrefe
   };
 }
 
+const DEFAULT_PRINTER: PrinterDevice = {
+  address: "AB:0A:FA:8F:3C:AA",
+  name: "Impresora Bluetooth",
+};
+
+const DEFAULT_PREFERENCES: PrinterPreferences = {
+  clientPrinter80mm: DEFAULT_PRINTER,
+  kitchenPrinter58mm: DEFAULT_PRINTER,
+  autoPrint: true,
+  useBluetoothIfAvailable: true,
+  fallbackToWeb: true,
+};
+
 export function useBluetootPrinter() {
   const [preferences, setPreferences] = useState<PrinterPreferences>(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
+<<<<<<< HEAD
 <<<<<<< HEAD
     return (
       stored && {
@@ -115,6 +129,15 @@ export function useBluetootPrinter() {
       return DEFAULT_PREFERENCES;
     }
 >>>>>>> origen/main
+=======
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return { ...DEFAULT_PREFERENCES, ...parsed };
+    }
+    // Save defaults on first load
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_PREFERENCES));
+    return DEFAULT_PREFERENCES;
+>>>>>>> 5f9f36c572e74e0818426916ec812d5f80d28e05
   });
 
   const [isPrinting, setIsPrinting] = useState(false);
