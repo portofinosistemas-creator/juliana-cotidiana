@@ -26,21 +26,29 @@ interface PrinterPreferences {
 
 const STORAGE_KEY = "printerPreferences";
 
+const DEFAULT_PRINTER: PrinterDevice = {
+  address: "AB:0A:FA:8F:3C:AA",
+  name: "Impresora Bluetooth",
+};
+
+const DEFAULT_PREFERENCES: PrinterPreferences = {
+  clientPrinter80mm: DEFAULT_PRINTER,
+  kitchenPrinter58mm: DEFAULT_PRINTER,
+  autoPrint: true,
+  useBluetoothIfAvailable: true,
+  fallbackToWeb: true,
+};
+
 export function useBluetootPrinter() {
   const [preferences, setPreferences] = useState<PrinterPreferences>(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
-    return (
-      stored && {
-        ...JSON.parse(stored),
-        autoPrint: true,
-        useBluetoothIfAvailable: true,
-        fallbackToWeb: true,
-      }
-    ) || {
-      autoPrint: true,
-      useBluetoothIfAvailable: true,
-      fallbackToWeb: true,
-    };
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return { ...DEFAULT_PREFERENCES, ...parsed };
+    }
+    // Save defaults on first load
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_PREFERENCES));
+    return DEFAULT_PREFERENCES;
   });
 
   const [isPrinting, setIsPrinting] = useState(false);
