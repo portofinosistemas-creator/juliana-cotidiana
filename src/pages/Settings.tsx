@@ -507,48 +507,6 @@ export default function SettingsPage() {
                     }
                   />
                 </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label htmlFor="use-bluetooth" className="font-medium">
-                      Usar Bluetooth
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      Envía datos directamente a impresoras
-                    </p>
-                  </div>
-                  <Switch
-                    id="use-bluetooth"
-                    checked={preferences.useBluetoothIfAvailable}
-                    onCheckedChange={(checked) =>
-                      savePreferences({
-                        ...preferences,
-                        useBluetoothIfAvailable: checked,
-                      })
-                    }
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label htmlFor="fallback" className="font-medium">
-                      Fallback a Navegador
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      Si falla Bluetooth, intenta por navegador
-                    </p>
-                  </div>
-                  <Switch
-                    id="fallback"
-                    checked={preferences.fallbackToWeb}
-                    onCheckedChange={(checked) =>
-                      savePreferences({
-                        ...preferences,
-                        fallbackToWeb: checked,
-                      })
-                    }
-                  />
-                </div>
               </CardContent>
             </Card>
           </TabsContent>

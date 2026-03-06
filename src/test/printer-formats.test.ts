@@ -1,4 +1,3 @@
-import { generateKitchenOrderHTML, generateClientTicketHTML } from "@/lib/printer-formats";
 import { textToCP850, buildKitchenOrderBytes, buildClientTicketBytes } from "@/lib/escpos";
 import type { CartItem } from "@/types/pos";
 
@@ -31,27 +30,6 @@ const mockCartItem: CartItem = {
   customizations: [{ ingredient: mockIngredient, extraCost: 0 }],
   customLabel: "Sin croutones",
 };
-
-describe("Printer Formats - HTML fallback", () => {
-  test("generateKitchenOrderHTML debe incluir nombre del cliente", () => {
-    const html = generateKitchenOrderHTML([mockCartItem], 123, "Juan", "23/02/2026 10:30");
-    expect(html).toContain("JUAN");
-    expect(html).toContain("COMANDA #123");
-  });
-
-  test("generateClientTicketHTML debe incluir total", () => {
-    const html = generateClientTicketHTML([mockCartItem], 125, 123, "Juan", "23/02/2026 10:30");
-    expect(html).toContain("$125");
-  });
-
-  test("HTML debe ser valido", () => {
-    const html = generateKitchenOrderHTML([mockCartItem], 123, "Juan", "23/02/2026 10:30");
-    expect(html).toContain("<html>");
-    expect(html).toContain("</html>");
-    expect(html).toContain("<head>");
-    expect(html).toContain("<body>");
-  });
-});
 
 describe("ESC/POS CP850 encoding", () => {
   test("ASCII characters pass through unchanged", () => {

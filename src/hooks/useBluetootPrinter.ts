@@ -1,12 +1,9 @@
 import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import {
-  generateClientTicketHTML,
   generateClientTicketBytes,
-  generateKitchenOrderHTML,
   generateKitchenOrderBytes,
   printToDevice,
-  printViaBrowser,
 } from "@/lib/printer-formats";
 import type { CartItem } from "@/types/pos";
 
@@ -20,8 +17,6 @@ interface PrinterPreferences {
   clientPrinter80mm?: PrinterDevice;
   kitchenPrinter58mm?: PrinterDevice;
   autoPrint: boolean;
-  useBluetoothIfAvailable: boolean;
-  fallbackToWeb: boolean;
 }
 
 const STORAGE_KEY = "printerPreferences";
@@ -33,13 +28,9 @@ export function useBluetootPrinter() {
       stored && {
         ...JSON.parse(stored),
         autoPrint: true,
-        useBluetoothIfAvailable: true,
-        fallbackToWeb: true,
       }
     ) || {
       autoPrint: true,
-      useBluetoothIfAvailable: true,
-      fallbackToWeb: true,
     };
   });
 
@@ -130,20 +121,12 @@ export function useBluetootPrinter() {
     async (items: CartItem[], total: number, orderNumber: number | null, customerName: string, dateStr: string) => {
       const printJob = async () => {
         try {
-          if (preferences.useBluetoothIfAvailable && preferences.clientPrinter80mm) {
-            try {
-              const bytes = generateClientTicketBytes(items, total, orderNumber, customerName, dateStr);
-              await printToDevice(preferences.clientPrinter80mm.address, bytes, "80mm");
-              toast.success("Ticket impreso en cliente");
-              return;
-            } catch (error) {
-              console.error("Error Bluetooth:", error);
-              if (!preferences.fallbackToWeb) throw error;
-            }
+          if (!preferences.clientPrinter80mm) {
+            throw new Error("No hay impresora de cliente emparejada");
           }
-          const htmlContent = generateClientTicketHTML(items, total, orderNumber, customerName, dateStr);
-          printViaBrowser(htmlContent, "Ticket Cliente");
-          toast.success("Ticket listo para imprimir");
+          const bytes = generateClientTicketBytes(items, total, orderNumber, customerName, dateStr);
+          await printToDevice(preferences.clientPrinter80mm.address, bytes, "80mm");
+          toast.success("Ticket ESC/POS enviado a cliente");
         } catch (error) {
           console.error("Error al imprimir ticket:", error);
           toast.error("Error al imprimir ticket");
@@ -159,20 +142,12 @@ export function useBluetootPrinter() {
     async (items: CartItem[], orderNumber: number | null, customerName: string, dateStr: string) => {
       const printJob = async () => {
         try {
-          if (preferences.useBluetoothIfAvailable && preferences.kitchenPrinter58mm) {
-            try {
-              const bytes = generateKitchenOrderBytes(items, orderNumber, customerName, dateStr);
-              await printToDevice(preferences.kitchenPrinter58mm.address, bytes, "58mm");
-              toast.success("Comanda enviada a cocina");
-              return;
-            } catch (error) {
-              console.error("Error Bluetooth:", error);
-              if (!preferences.fallbackToWeb) throw error;
-            }
+          if (!preferences.kitchenPrinter58mm) {
+            throw new Error("No hay impresora de cocina emparejada");
           }
-          const htmlContent = generateKitchenOrderHTML(items, orderNumber, customerName, dateStr);
-          printViaBrowser(htmlContent, "Comanda Cocina");
-          toast.success("Comanda lista para imprimir");
+          const bytes = generateKitchenOrderBytes(items, orderNumber, customerName, dateStr);
+          await printToDevice(preferences.kitchenPrinter58mm.address, bytes, "58mm");
+          toast.success("Comanda ESC/POS enviada a cocina");
         } catch (error) {
           console.error("Error al imprimir comanda:", error);
           toast.error("Error al imprimir comanda");

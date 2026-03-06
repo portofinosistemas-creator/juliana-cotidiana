@@ -31,20 +31,6 @@ export function PrinterConfig() {
     });
   };
 
-  const handleToggleBluetooth = () => {
-    savePreferences({
-      ...preferences,
-      useBluetoothIfAvailable: !preferences.useBluetoothIfAvailable,
-    });
-  };
-
-  const handleToggleFallback = () => {
-    savePreferences({
-      ...preferences,
-      fallbackToWeb: !preferences.fallbackToWeb,
-    });
-  };
-
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -164,28 +150,6 @@ export function PrinterConfig() {
                 Se imprimirán ambos tickets automáticamente al confirmar el pago
               </p>
             )}
-
-            <div className="flex items-center justify-between">
-              <Label htmlFor="use-bluetooth" className="font-medium text-foreground">
-                Usar Bluetooth
-              </Label>
-              <Switch
-                id="use-bluetooth"
-                checked={preferences.useBluetoothIfAvailable}
-                onCheckedChange={handleToggleBluetooth}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <Label htmlFor="fallback" className="font-medium text-foreground">
-                Fallback a navegador
-              </Label>
-              <Switch
-                id="fallback"
-                checked={preferences.fallbackToWeb}
-                onCheckedChange={handleToggleFallback}
-              />
-            </div>
           </div>
         </div>
       </DialogContent>
