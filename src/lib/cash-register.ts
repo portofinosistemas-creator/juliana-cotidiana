@@ -405,10 +405,10 @@ export async function openCashRegisterSession(input: {
     .from("cash_register_sessions")
     .insert({
       opening_amount: Math.max(0, input.openingAmount),
-      opening_denominations: input.openingDenominations || [],
+      opening_denominations: (input.openingDenominations || []) as unknown as Record<string, unknown>[],
       notes: input.notes?.trim() || "Apertura de caja",
       status: "open",
-    })
+    } as any)
     .select("*")
     .single();
 
