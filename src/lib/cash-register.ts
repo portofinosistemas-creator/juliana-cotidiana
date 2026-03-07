@@ -453,10 +453,10 @@ export async function closeCashRegisterSession(input: {
       closing_amount: input.closingAmount,
       expected_amount: input.expectedAmount,
       difference: input.difference,
-      closing_denominations: (input.closingDenominations || []) as unknown as Record<string, unknown>[],
+      closing_denominations: (input.closingDenominations || []) as any,
       notes: input.notes?.trim() || "Corte de caja",
       status: "closed",
-    })
+    } as any)
     .eq("id", input.sessionId)
     .select("*")
     .single();
