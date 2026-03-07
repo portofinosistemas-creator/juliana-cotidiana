@@ -227,7 +227,7 @@ const Index = () => {
               productSizes={productSizes || []}
               onAddToCart={handleAddToCart}
               onCustomize={setCustomizeProduct}
-              onCustomizeHouseSalad={(product, size) => setHouseSaladProduct({ product, size })}
+              onCustomizeHouseSalad={(product) => setHouseSaladProduct({ product })}
             />
           )}
         </main>

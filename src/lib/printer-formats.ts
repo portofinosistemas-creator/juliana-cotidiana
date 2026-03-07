@@ -887,9 +887,9 @@ export async function printMultipleToDevice(
         const chunk = finalPrintData.slice(i, Math.min(i + chunkSize, finalPrintData.length));
         const buffer = new Uint8Array(chunk);
 
-        if (characteristic.properties.writeWithoutResponse) {
+        if ((characteristic as any).writeValueWithoutResponse) {
           await withTimeout(
-            characteristic.writeValueWithoutResponse(buffer),
+            (characteristic as any).writeValueWithoutResponse(buffer),
             5000,
             "Envio de datos a impresora"
           );
