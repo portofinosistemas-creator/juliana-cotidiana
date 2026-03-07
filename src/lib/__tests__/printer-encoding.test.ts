@@ -48,8 +48,8 @@ describe('Encoding CP850 en tickets', () => {
       customLabel: "ÁÉÍÓÚ áéíóú Ññ Üü ¿¡ €",
       kitchenNote: "Bien cocido",
       customizations: [
-        { ingredient: mockIngredient("jalapeño") },
-        { ingredient: mockIngredient("aguacate") }
+        { ingredient: mockIngredient("jalapeño"), extraCost: 0 },
+        { ingredient: mockIngredient("aguacate"), extraCost: 0 }
       ]
     }
   ];
