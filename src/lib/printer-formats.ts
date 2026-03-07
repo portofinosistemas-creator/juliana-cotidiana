@@ -1,7 +1,4 @@
 import type { CartItem } from "@/types/pos";
-<<<<<<< HEAD
-import { buildKitchenOrderBytes, buildClientTicketBytes } from "./escpos";
-=======
 import type { CashRegisterSale } from "@/lib/cash-register";
 const PRINT_GATEWAY_URL = import.meta.env.VITE_PRINT_GATEWAY_URL?.trim();
 const PRINT_GATEWAY_TOKEN = import.meta.env.VITE_PRINT_GATEWAY_TOKEN?.trim();
@@ -49,7 +46,6 @@ export interface CashCutDetails {
   withdrawals?: CashCutWithdrawalSummary[];
   cardTransactions?: CashCutCardTransactionSummary[];
 }
->>>>>>> origen/main
 
 /** Map CartItem[] to the shape expected by ESC/POS builders */
 function mapItemsForKitchen(items: CartItem[]) {
@@ -149,58 +145,20 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-/**
- * Generate raw ESC/POS bytes for kitchen order (58mm)
- */
-<<<<<<< HEAD
-export function generateKitchenOrderBytes(
-  items: CartItem[],
-  orderNumber: number | null,
-  customerName: string,
-  dateStr: string,
-): number[] {
-  return buildKitchenOrderBytes(
-    mapItemsForKitchen(items),
-    orderNumber,
-    customerName,
-    dateStr,
-  );
-}
+const PRINTER_CONFIGS = {
+  "80mm": { width: 72, charsPerLine: 48 },
+  "58mm": { width: 48, charsPerLine: 32 },
+};
 
-/**
- * Generate raw ESC/POS bytes for client ticket (80mm)
- */
-export function generateClientTicketBytes(
-=======
 type ClientTicketStyle = "clasico" | "minimal";
 const CLIENT_TICKET_STYLE: ClientTicketStyle = "clasico";
 
 export function generateClientTicketHTML(
->>>>>>> origen/main
   items: CartItem[],
   total: number,
   orderNumber: number | null,
   customerName: string,
   dateStr: string,
-<<<<<<< HEAD
-): number[] {
-  return buildClientTicketBytes(
-    mapItemsForTicket(items),
-    total,
-    orderNumber,
-    customerName,
-    dateStr,
-  );
-}
-
-/**
- * Send raw ESC/POS bytes to a Bluetooth printer via Web Bluetooth API.
- */
-export async function printToDevice(
-  _deviceAddress: string,
-  bytes: number[],
-  printerSize: "80mm" | "58mm",
-=======
   paymentMethodLabel: string = "Efectivo"
 ): string {
   const config = PRINTER_CONFIGS["80mm"];
@@ -634,12 +592,10 @@ export function generateKitchenOrderHTML(
           <div class="items-section">
   `;
 
-  // Items con ingredientes
-  items.forEach((item, index) => {
+  items.forEach((item) => {
     html += `<div class="item-group">`;
     html += `<div class="item-line">${item.quantity}x ${getDisplayProductName(item.product.name)}${item.productSize ? ` (${item.productSize.name})` : ""}</div>`;
 
-    // Mostrar ingredientes/customizaciones
     if (item.customizations && item.customizations.length > 0) {
       html += `<div style="margin-top: 0.5mm; margin-left: 2mm;">`;
       item.customizations.forEach((c) => {
@@ -648,7 +604,6 @@ export function generateKitchenOrderHTML(
       html += `</div>`;
     }
 
-    // Mostrar instrucciones personalizadas
     if (item.customLabel && !isDuplicatedCustomizationLabel(item.customLabel, item.customizations || [])) {
       html += `<div class="ingredient" style="margin-top: 0.5mm; font-style: italic; color: #000;">📝 ${item.customLabel}</div>`;
     }
@@ -657,7 +612,6 @@ export function generateKitchenOrderHTML(
       html += `<div class="ingredient" style="margin-top: 0.5mm; font-style: italic; color: #000; text-transform: none;">Nota cocina: ${escapeHtml(item.kitchenNote)}</div>`;
     }
 
-    // Si no tiene ingredientes
     if (
       (!item.customizations || item.customizations.length === 0) &&
       !item.customLabel &&
@@ -797,7 +751,6 @@ async function resolveBluetoothDevice(deviceAddress: string): Promise<BluetoothD
 }
 
 async function resolveWritableCharacteristic(deviceAddress: string): Promise<BluetoothRemoteGATTCharacteristic> {
-  // Reusar sesión activa para evitar prompts de sincronización en cada impresión.
   if (
     activeBluetoothSession &&
     activeBluetoothSession.device.gatt?.connected &&
@@ -898,63 +851,13 @@ export async function printMultipleToDevice(
       fullCut?: boolean;
     };
   }>
->>>>>>> origen/main
 ): Promise<void> {
   if (!navigator.bluetooth) {
     throw new Error("Web Bluetooth API no disponible en este navegador");
   }
-  const printData = bytes;
 
-<<<<<<< HEAD
-  try {
-    const device = await navigator.bluetooth.requestDevice({
-      filters: [{ services: ["00001101-0000-1000-8000-00805f9b34fb"] }],
-      optionalServices: [
-        "00001101-0000-1000-8000-00805f9b34fb",
-        "0000180a-0000-1000-8000-00805f9b34fb",
-      ],
-    });
-
-    if (!device) throw new Error("No se selecciono dispositivo");
-
-    const server = await device.gatt?.connect();
-    if (!server) throw new Error("No se pudo conectar a GATT server");
-
-    const service = await server.getPrimaryService("00001101-0000-1000-8000-00805f9b34fb");
-
-    let characteristic;
-    try {
-      characteristic = await service.getCharacteristic("2a19");
-    } catch {
-      const characteristics = await service.getCharacteristics();
-      characteristic = characteristics.find(
-        (c) => c.properties.write || c.properties.writeWithoutResponse,
-      );
-      if (!characteristic) throw new Error("No se encontro caracteristica escribible");
-    }
-
-    // Send in chunks (Android limit ~512 bytes)
-    const CHUNK_SIZE = 512;
-    for (let i = 0; i < printData.length; i += CHUNK_SIZE) {
-      const chunk = printData.slice(i, Math.min(i + CHUNK_SIZE, printData.length));
-      const buffer = new Uint8Array(chunk);
-      if (characteristic.properties.writeWithoutResponse) {
-        await characteristic.writeValueWithoutResponse(buffer);
-      } else {
-        await characteristic.writeValue(buffer);
-      }
-      await new Promise((r) => setTimeout(r, 50));
-    }
-
-    await new Promise((r) => setTimeout(r, 200));
-    device.gatt?.disconnect();
-  } catch (error) {
-    console.error(`Error de impresion ESC/POS (${printerSize}):`, error);
-    throw error;
-=======
   if (jobs.length === 0) {
     return;
->>>>>>> origen/main
   }
 
   const printData = jobs.flatMap((job) => {
@@ -984,9 +887,9 @@ export async function printMultipleToDevice(
         const chunk = finalPrintData.slice(i, Math.min(i + chunkSize, finalPrintData.length));
         const buffer = new Uint8Array(chunk);
 
-        if (characteristic.properties.writeWithoutResponse) {
+        if ((characteristic as any).writeValueWithoutResponse) {
           await withTimeout(
-            characteristic.writeValueWithoutResponse(buffer),
+            (characteristic as any).writeValueWithoutResponse(buffer),
             5000,
             "Envio de datos a impresora"
           );
@@ -1006,8 +909,6 @@ export async function printMultipleToDevice(
     }
   });
 }
-<<<<<<< HEAD
-=======
 
 /**
  * Convierte HTML a comandos ESC/POS para impresoras térmicas
@@ -1025,31 +926,24 @@ function htmlToEscPosCommands(
 ): number[] {
   const commands: number[] = [];
 
-  // Inicializacion recomendada por JHP-A: ESC @, ESC t 2, ESC a 0
   if (commandOptions?.includeInit !== false) {
     commands.push(0x1b, 0x40); // ESC @
     commands.push(0x1b, 0x74, 0x02); // ESC t 2 (CP850)
     commands.push(0x1b, 0x61, 0x00); // ESC a 0 (izquierda)
   }
 
-  // Pulso para abrir cajón (ESC p) cuando se solicita explícitamente.
   if (options?.openDrawer) {
     commands.push(0x1b, 0x70, 0x00, 0x32, 0xfa);
   }
 
-  // Configurar tamaño de fuente y área de impresión según tamaño
   if (printerSize === "58mm") {
-    // Para 58mm: fuente normal
-    commands.push(0x1d, 0x21, 0x00); // GS ! - Font size normal
+    commands.push(0x1d, 0x21, 0x00);
   } else {
-    // Para 80mm: fuente normal
     commands.push(0x1d, 0x21, 0x00);
   }
 
-  // Mantener izquierda por defecto en conversion de HTML a texto plano.
-  commands.push(0x1b, 0x61, 0x00); // ESC a 0
+  commands.push(0x1b, 0x61, 0x00);
 
-  // Extraer texto del HTML
   const text = html
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/div>/g, "\n")
@@ -1064,22 +958,17 @@ function htmlToEscPosCommands(
     .filter((line) => line.length > 0)
     .join("\n");
 
-  // Convertir texto a bytes UTF-8
   const encoder = new TextEncoder();
   const textBytes = encoder.encode(toEscPosSafeText(text));
   commands.push(...Array.from(textBytes));
 
-  // Alineación izquierda (para cierre)
-  commands.push(0x1b, 0x61, 0x00); // ESC a - Left alignment
+  commands.push(0x1b, 0x61, 0x00);
+  commands.push(0x1b, 0x64, 0x03);
 
-  // Alimentacion previa al corte para evitar cortar sobre el ultimo texto.
-  commands.push(0x1b, 0x64, 0x03); // ESC d 3
-
-  // Corte de papel.
   if (options?.fullCut) {
-    commands.push(0x1d, 0x56, 0x00); // GS V m=0 - Full cut
+    commands.push(0x1d, 0x56, 0x00);
   } else {
-    commands.push(0x1d, 0x56, 0x01); // GS V m=1 - Partial cut
+    commands.push(0x1d, 0x56, 0x01);
   }
 
   return commands;
@@ -1096,13 +985,13 @@ const LEFT = [ESC, 0x61, 0];
 const BOLD_ON = [ESC, 0x45, 1];
 const BOLD_OFF = [ESC, 0x45, 0];
 const FONT_NORMAL = [GS, 0x21, 0];
-const FONT_LARGE = [GS, 0x21, 17]; // 2x height, 2x width
+const FONT_LARGE = [GS, 0x21, 17];
 const RESET = [ESC, 0x40];
-const CODE_PAGE_CP850 = [ESC, 0x74, 2]; // ESC t 2
-const FEED_3_LINES = [ESC, 0x64, 3]; // ESC d 3
-const PARTIAL_CUT = [GS, 0x56, 1]; // GS V 1
-const FULL_CUT = [GS, 0x56, 0]; // GS V 0
-const OPEN_DRAWER = [ESC, 0x70, 0, 50, 250]; // ESC p m t1 t2
+const CODE_PAGE_CP850 = [ESC, 0x74, 2];
+const FEED_3_LINES = [ESC, 0x64, 3];
+const PARTIAL_CUT = [GS, 0x56, 1];
+const FULL_CUT = [GS, 0x56, 0];
+const OPEN_DRAWER = [ESC, 0x70, 0, 50, 250];
 
 function encode(text: string): number[] {
   return Array.from(textEncoder.encode(toEscPosSafeText(normalizeText(text)) + "\n"));
@@ -1469,12 +1358,9 @@ export async function printToCups(
 
 /**
  * Imprime usando la API de impresión del navegador (fallback).
- * Esto crea un iframe oculto, escribe el HTML en él y abre el diálogo de impresión
- * para ese iframe, evitando abrir una nueva pestaña.
  */
 export function printViaBrowser(htmlContent: string, title: string = "Impresión"): void {
   void htmlContent;
   void title;
   throw new Error("Modo ESC/POS estricto: impresión web/html deshabilitada");
 }
->>>>>>> origen/main

@@ -11,9 +11,7 @@ import { useCart } from "@/hooks/useCart";
 import { useCashRegister } from "@/hooks/useCashRegister";
 import type { Product, ProductSize, SelectedIngredient } from "@/types/pos";
 import { Skeleton } from "@/components/ui/skeleton";
-<<<<<<< HEAD
 import { Lock } from "lucide-react";
-=======
 import { toast } from "sonner";
 import { isCashRegisterOpenToday } from "@/lib/cash-register";
 
@@ -31,7 +29,6 @@ const normalizeText = (value: string) =>
     .toUpperCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
->>>>>>> origen/main
 
 const Index = () => {
   const { data: categories, isLoading: catLoading } = useCategories();
@@ -113,7 +110,6 @@ const Index = () => {
         continue;
       }
 
-      // Keep the product with lower display_order, fallback to oldest created_at.
       if (product.display_order < existing.display_order) {
         dedupedByName.set(key, product);
         continue;
@@ -193,7 +189,6 @@ const Index = () => {
   return (
     <Layout>
       <div className="relative flex flex-1 overflow-hidden">
-        {/* Overlay when register is closed */}
         {!registerIsOpen && (
           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-background/80 backdrop-blur-sm">
             <Lock className="h-12 w-12 text-muted-foreground mb-3" />
@@ -202,7 +197,6 @@ const Index = () => {
           </div>
         )}
 
-        {/* Categories */}
         <aside className="w-48 shrink-0 overflow-y-auto border-r bg-card lg:w-56">
           {isLoading ? (
             <div className="space-y-2 p-3">
@@ -219,7 +213,6 @@ const Index = () => {
           )}
         </aside>
 
-        {/* Products */}
         <main className="flex-1 overflow-y-auto">
           {isLoading ? (
             <div className="grid grid-cols-2 gap-3 p-3 lg:grid-cols-3">
@@ -234,12 +227,11 @@ const Index = () => {
               productSizes={productSizes || []}
               onAddToCart={handleAddToCart}
               onCustomize={setCustomizeProduct}
-              onCustomizeHouseSalad={(product, size) => setHouseSaladProduct({ product, size })}
+              onCustomizeHouseSalad={(product) => setHouseSaladProduct({ product })}
             />
           )}
         </main>
 
-        {/* Cart */}
         <aside className="w-72 shrink-0 lg:w-80">
           <CartPanel
             items={cart.items}
@@ -248,19 +240,14 @@ const Index = () => {
             onUpdateKitchenNote={cart.updateKitchenNote}
             onRemove={cart.removeItem}
             onClear={cart.clearCart}
-<<<<<<< HEAD
             onPay={handleOpenPayment}
             payDisabled={!cashRegisterOpen}
             onAddStandaloneExtra={handleOpenStandaloneExtras}
-=======
-            onPay={() => setShowPayment(true)}
-            onAddExtras={(item) => setHouseSaladProduct(item.product)}
->>>>>>> 5f9f36c572e74e0818426916ec812d5f80d28e05
+            onAddExtras={(item) => setHouseSaladProduct({ product: item.product, size: item.productSize })}
           />
         </aside>
       </div>
 
-      {/* Custom Salad Modal */}
       {customizeProduct && (
         <CustomSaladModal
           open={!!customizeProduct}
@@ -295,7 +282,6 @@ const Index = () => {
         />
       )}
 
-      {/* Payment Modal */}
       <PaymentModal
         open={showPayment}
         onClose={() => setShowPayment(false)}

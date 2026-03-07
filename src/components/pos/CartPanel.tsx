@@ -1,4 +1,4 @@
-import { Trash2, Minus, Plus, PlusCircle } from "lucide-react";
+import { Trash2, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { CartItem } from "@/types/pos";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -33,10 +33,10 @@ interface Props {
   onRemove: (id: string) => void;
   onClear: () => void;
   onPay: () => void;
-<<<<<<< HEAD
   payDisabled?: boolean;
   onAddStandaloneExtra?: () => void;
   standaloneExtraDisabled?: boolean;
+  onAddExtras?: (item: CartItem) => void;
 }
 
 export function CartPanel({
@@ -50,13 +50,8 @@ export function CartPanel({
   payDisabled = false,
   onAddStandaloneExtra,
   standaloneExtraDisabled = false,
+  onAddExtras,
 }: Props) {
-=======
-  onAddExtras?: (item: CartItem) => void;
-}
-
-export function CartPanel({ items, total, onUpdateQuantity, onRemove, onClear, onPay, onAddExtras }: Props) {
->>>>>>> 5f9f36c572e74e0818426916ec812d5f80d28e05
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
 
   const handleNumPadInput = (value: number) => {
@@ -65,7 +60,6 @@ export function CartPanel({ items, total, onUpdateQuantity, onRemove, onClear, o
     }
   };
 
-<<<<<<< HEAD
   const handleKitchenNote = (id: string, currentNote?: string) => {
     const note = window.prompt(
       "Nota para cocina (deja vacio para eliminarla):",
@@ -74,9 +68,8 @@ export function CartPanel({ items, total, onUpdateQuantity, onRemove, onClear, o
     if (note === null) return;
     onUpdateKitchenNote(id, note);
   };
-=======
+
   const selectedItem = items.find((i) => i.id === selectedItemId) || null;
->>>>>>> 5f9f36c572e74e0818426916ec812d5f80d28e05
 
   return (
     <div className="flex h-full flex-col border-l bg-card">
@@ -201,7 +194,7 @@ export function CartPanel({ items, total, onUpdateQuantity, onRemove, onClear, o
             onClick={onAddStandaloneExtra}
             disabled={standaloneExtraDisabled}
           >
-            Agregar extra
+            Extra independiente
           </Button>
         )}
         <div className="flex items-center justify-between text-lg font-bold">

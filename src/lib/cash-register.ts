@@ -405,10 +405,10 @@ export async function openCashRegisterSession(input: {
     .from("cash_register_sessions")
     .insert({
       opening_amount: Math.max(0, input.openingAmount),
-      opening_denominations: input.openingDenominations || [],
+      opening_denominations: (input.openingDenominations || []) as unknown as Record<string, unknown>[],
       notes: input.notes?.trim() || "Apertura de caja",
       status: "open",
-    })
+    } as any)
     .select("*")
     .single();
 
@@ -453,10 +453,10 @@ export async function closeCashRegisterSession(input: {
       closing_amount: input.closingAmount,
       expected_amount: input.expectedAmount,
       difference: input.difference,
-      closing_denominations: input.closingDenominations || [],
+      closing_denominations: (input.closingDenominations || []) as any,
       notes: input.notes?.trim() || "Corte de caja",
       status: "closed",
-    })
+    } as any)
     .eq("id", input.sessionId)
     .select("*")
     .single();
