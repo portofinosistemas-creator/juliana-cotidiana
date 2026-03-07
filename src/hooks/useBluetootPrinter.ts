@@ -1,16 +1,37 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
+<<<<<<< HEAD
+  generateClientTicketBytes,
+  generateKitchenOrderBytes,
+  printToDevice,
+=======
   type CashCutCountSummary,
   type CashCutDetails,
   generateCashCutTicketEscPos,
   generateClientTicketEscPos,
   generateKitchenOrderEscPos,
   printMultipleToDevice,
+>>>>>>> origen/main
 } from "@/lib/printer-formats";
 import type { PrinterDevice, PrinterPreferences } from "@/types/printer";
 import type { CartItem } from "@/types/pos";
+<<<<<<< HEAD
+
+interface PrinterDevice {
+  address: string;
+  name: string;
+  lastUsed?: Date;
+}
+
+interface PrinterPreferences {
+  clientPrinter80mm?: PrinterDevice;
+  kitchenPrinter58mm?: PrinterDevice;
+  autoPrint: boolean;
+}
+=======
 import type { CashRegisterSale } from "@/lib/cash-register";
+>>>>>>> origen/main
 
 const STORAGE_KEY = "printerPreferences";
 const AUTO_PRINTER_ID = "AUTO_PRINTER";
@@ -71,9 +92,33 @@ function normalizePreferences(input?: Partial<PrinterPreferences>): PrinterPrefe
   };
 }
 
+const DEFAULT_PRINTER: PrinterDevice = {
+  address: "AB:0A:FA:8F:3C:AA",
+  name: "Impresora Bluetooth",
+};
+
+const DEFAULT_PREFERENCES: PrinterPreferences = {
+  clientPrinter80mm: DEFAULT_PRINTER,
+  kitchenPrinter58mm: DEFAULT_PRINTER,
+  autoPrint: true,
+  useBluetoothIfAvailable: true,
+  fallbackToWeb: true,
+};
+
 export function useBluetootPrinter() {
   const [preferences, setPreferences] = useState<PrinterPreferences>(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
+<<<<<<< HEAD
+<<<<<<< HEAD
+    return (
+      stored && {
+        ...JSON.parse(stored),
+        autoPrint: true,
+      }
+    ) || {
+      autoPrint: true,
+    };
+=======
     if (!stored) return DEFAULT_PREFERENCES;
 
     try {
@@ -83,6 +128,16 @@ export function useBluetootPrinter() {
       localStorage.removeItem(STORAGE_KEY);
       return DEFAULT_PREFERENCES;
     }
+>>>>>>> origen/main
+=======
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return { ...DEFAULT_PREFERENCES, ...parsed };
+    }
+    // Save defaults on first load
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_PREFERENCES));
+    return DEFAULT_PREFERENCES;
+>>>>>>> 5f9f36c572e74e0818426916ec812d5f80d28e05
   });
 
   const [isPrinting, setIsPrinting] = useState(false);
@@ -94,6 +149,69 @@ export function useBluetootPrinter() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
   }, []);
 
+<<<<<<< HEAD
+  const pairClientPrinter = useCallback(async () => {
+    try {
+      if (!navigator.bluetooth) {
+        toast.error("Web Bluetooth no disponible en este navegador");
+        return false;
+      }
+      toast.loading("Buscando impresoras...");
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: ["00001101-0000-1000-8000-00805f9b34fb"] }],
+        optionalServices: ["00001101-0000-1000-8000-00805f9b34fb", "0000180a-0000-1000-8000-00805f9b34fb"],
+      });
+      if (!device) return false;
+      const newPrefs = {
+        ...preferences,
+        clientPrinter80mm: { address: device.id, name: device.name || "Impresora 80mm" },
+      };
+      savePreferences(newPrefs);
+      toast.success(`Impresora "${device.name}" emparejada correctamente`);
+      return true;
+    } catch (error) {
+      console.error("Error al emparejar impresora:", error);
+      if (error instanceof Error) {
+        if (error.message.includes("User cancelled")) toast.info("Emparejamiento cancelado");
+        else toast.error(`Error: ${error.message}`);
+      } else {
+        toast.error("Error desconocido al emparejar impresora");
+      }
+      return false;
+    }
+  }, [preferences, savePreferences]);
+
+  const pairKitchenPrinter = useCallback(async () => {
+    try {
+      if (!navigator.bluetooth) {
+        toast.error("Web Bluetooth no disponible en este navegador");
+        return false;
+      }
+      toast.loading("Buscando impresoras...");
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: ["00001101-0000-1000-8000-00805f9b34fb"] }],
+        optionalServices: ["00001101-0000-1000-8000-00805f9b34fb", "0000180a-0000-1000-8000-00805f9b34fb"],
+      });
+      if (!device) return false;
+      const newPrefs = {
+        ...preferences,
+        kitchenPrinter58mm: { address: device.id, name: device.name || "Impresora 58mm" },
+      };
+      savePreferences(newPrefs);
+      toast.success(`Impresora "${device.name}" emparejada correctamente`);
+      return true;
+    } catch (error) {
+      console.error("Error al emparejar impresora:", error);
+      if (error instanceof Error) {
+        if (error.message.includes("User cancelled")) toast.info("Emparejamiento cancelado");
+        else toast.error(`Error: ${error.message}`);
+      } else {
+        toast.error("Error desconocido al emparejar impresora");
+      }
+      return false;
+    }
+  }, [preferences, savePreferences]);
+=======
   const enqueuePrintJob = useCallback((job: () => Promise<void>) => {
     return new Promise<void>((resolve, reject) => {
       setPrintQueue((prev) => [
@@ -110,26 +228,42 @@ export function useBluetootPrinter() {
       ]);
     });
   }, []);
+>>>>>>> origen/main
 
   useEffect(() => {
     let isMounted = true;
-
     const processPrintQueue = async () => {
       if (printQueue.length === 0 || isPrinting) return;
       setIsPrinting(true);
       const job = printQueue[0];
-
-      try {
-        await job();
-      } catch (error) {
-        console.error("Error en trabajo de impresión:", error);
-      } finally {
-        if (isMounted) {
-          setPrintQueue((prev) => prev.slice(1));
-          setIsPrinting(false);
-        }
-      }
+      try { await job(); } catch (error) { console.error("Error en trabajo de impresion:", error); }
+      finally { if (isMounted) { setPrintQueue((prev) => prev.slice(1)); setIsPrinting(false); } }
     };
+<<<<<<< HEAD
+    processPrintQueue();
+    return () => { isMounted = false; };
+  }, [printQueue, isPrinting]);
+
+  const printClientTicket = useCallback(
+    async (items: CartItem[], total: number, orderNumber: number | null, customerName: string, dateStr: string) => {
+      const printJob = async () => {
+        try {
+          if (!preferences.clientPrinter80mm) {
+            throw new Error("No hay impresora de cliente emparejada");
+          }
+          const bytes = generateClientTicketBytes(items, total, orderNumber, customerName, dateStr);
+          await printToDevice(preferences.clientPrinter80mm.address, bytes, "80mm");
+          toast.success("Ticket ESC/POS enviado a cliente");
+        } catch (error) {
+          console.error("Error al imprimir ticket:", error);
+          toast.error("Error al imprimir ticket");
+          throw error;
+        }
+      };
+      setPrintQueue((prev) => [...prev, printJob]);
+    },
+    [preferences],
+=======
 
     void processPrintQueue();
 
@@ -256,10 +390,56 @@ export function useBluetootPrinter() {
       await enqueuePrintJob(printJob);
     },
     [enqueuePrintJob, getClientPrinter, preferences.fullCutOn80mm, preferences.openDrawerOn80mm]
+>>>>>>> origen/main
   );
 
   const printKitchenOrder = useCallback(
     async (items: CartItem[], orderNumber: number | null, customerName: string, dateStr: string) => {
+<<<<<<< HEAD
+      const printJob = async () => {
+        try {
+          if (!preferences.kitchenPrinter58mm) {
+            throw new Error("No hay impresora de cocina emparejada");
+          }
+          const bytes = generateKitchenOrderBytes(items, orderNumber, customerName, dateStr);
+          await printToDevice(preferences.kitchenPrinter58mm.address, bytes, "58mm");
+          toast.success("Comanda ESC/POS enviada a cocina");
+        } catch (error) {
+          console.error("Error al imprimir comanda:", error);
+          toast.error("Error al imprimir comanda");
+          throw error;
+        }
+      };
+      setPrintQueue((prev) => [...prev, printJob]);
+    },
+    [preferences],
+  );
+
+  const printBoth = useCallback(
+    async (items: CartItem[], total: number, orderNumber: number | null, customerName: string, dateStr: string) => {
+      await printKitchenOrder(items, orderNumber, customerName, dateStr);
+      await printClientTicket(items, total, orderNumber, customerName, dateStr);
+    },
+    [printKitchenOrder, printClientTicket],
+  );
+
+  const unpairClientPrinter = useCallback(() => {
+    savePreferences({ ...preferences, clientPrinter80mm: undefined });
+    toast.success("Impresora 80mm desemparejada");
+  }, [preferences, savePreferences]);
+
+  const unpairKitchenPrinter = useCallback(() => {
+    savePreferences({ ...preferences, kitchenPrinter58mm: undefined });
+    toast.success("Impresora 58mm desemparejada");
+  }, [preferences, savePreferences]);
+
+  return {
+    preferences, savePreferences,
+    pairClientPrinter, pairKitchenPrinter,
+    unpairClientPrinter, unpairKitchenPrinter,
+    printClientTicket, printKitchenOrder, printBoth,
+    isPrinting, queueLength: printQueue.length,
+=======
       const printJob = async () => {
         const selectedPrinter = getClientPrinter() || AUTO_PRINTER;
 
@@ -354,5 +534,6 @@ export function useBluetootPrinter() {
     printBoth,
     isPrinting,
     queueLength: printQueue.length,
+>>>>>>> origen/main
   };
 }

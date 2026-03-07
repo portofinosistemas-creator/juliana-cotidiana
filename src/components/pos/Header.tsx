@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { Home, ClipboardList, Settings, LogOut, BarChart3, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
+<<<<<<< HEAD
+import { PrinterConfig } from "./PrinterConfig";
+import { CashRegisterBar } from "./CashRegister";
+=======
+>>>>>>> origen/main
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -46,6 +51,7 @@ export function Header() {
         <h1 className="truncate text-sm font-bold tracking-tight text-primary sm:text-lg">
           JULIANA — BARRA COTIDIANA
         </h1>
+        <CashRegisterBar />
       </div>
 
       <nav className="hidden items-center gap-1 lg:flex">

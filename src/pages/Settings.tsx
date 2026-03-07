@@ -985,6 +985,8 @@ export default function SettingsPage() {
                     }
                   />
                 </div>
+<<<<<<< HEAD
+=======
 
                 <div className="flex items-center justify-between">
                   <div>
@@ -1006,6 +1008,7 @@ export default function SettingsPage() {
                     }
                   />
                 </div>
+>>>>>>> origen/main
               </CardContent>
             </Card>
           </TabsContent>
