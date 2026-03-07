@@ -12,22 +12,53 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Bluetooth, Trash2, Plus } from "lucide-react";
 import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
+import { useMemo } from "react";
 
 export function PrinterConfig() {
   const [open, setOpen] = useState(false);
+  const [isLinking, setIsLinking] = useState(false);
   const {
     preferences,
     savePreferences,
-    pairClientPrinter,
-    pairKitchenPrinter,
-    unpairClientPrinter,
-    unpairKitchenPrinter,
+    getClientPrinter,
+    selectClientPrinter,
   } = useBluetootPrinter();
+
+  const selectedPrinter = getClientPrinter();
+  const availablePrinters = useMemo(
+    () => Object.values(preferences.printers || {}),
+    [preferences.printers]
+  );
 
   const handleToggleAutoPrint = () => {
     savePreferences({
       ...preferences,
       autoPrint: !preferences.autoPrint,
+    });
+  };
+
+  const handleLinkPrinter = async () => {
+    setIsLinking(true);
+    try {
+      await selectClientPrinter();
+    } catch {
+      // user cancelled
+    } finally {
+      setIsLinking(false);
+    }
+  };
+
+  const handleRemovePrinter = (printerId: string) => {
+    const newPrinters = { ...preferences.printers };
+    delete newPrinters[printerId];
+    const newClientPrinterId =
+      preferences.clientPrinterId === printerId
+        ? Object.keys(newPrinters)[0] || undefined
+        : preferences.clientPrinterId;
+    savePreferences({
+      ...preferences,
+      printers: newPrinters,
+      clientPrinterId: newClientPrinterId,
     });
   };
 
@@ -48,88 +79,57 @@ export function PrinterConfig() {
         </DialogHeader>
 
         <div className="space-y-6">
-          {/* Impresora 80mm */}
           <div className="rounded-lg border p-4">
             <div className="mb-3 flex items-center justify-between">
               <div>
-                <h3 className="font-semibold text-foreground">Impresora Cliente (80mm)</h3>
-                <p className="text-sm text-muted-foreground">Para tickets del cliente</p>
+                <h3 className="font-semibold text-foreground">Impresora activa</h3>
+                <p className="text-sm text-muted-foreground">Para tickets y comandas</p>
               </div>
-              {preferences.clientPrinter80mm && (
+              {selectedPrinter && (
                 <div className="text-xs rounded-full bg-green-100 px-2 py-1 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                  ✓ Conectada
+                  ✓ {selectedPrinter.name}
                 </div>
               )}
             </div>
 
-            {preferences.clientPrinter80mm ? (
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">
-                  {preferences.clientPrinter80mm.name}
-                </p>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  className="w-full gap-2"
-                  onClick={unpairClientPrinter}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Desemparejar
-                </Button>
-              </div>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full gap-2"
-                onClick={pairClientPrinter}
-              >
-                <Plus className="h-4 w-4" />
-                Emparejar Impresora
-              </Button>
-            )}
-          </div>
-
-          {/* Impresora 58mm */}
-          <div className="rounded-lg border p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-foreground">Impresora Cocina (58mm)</h3>
-                <p className="text-sm text-muted-foreground">Para comandas de cocina</p>
-              </div>
-              {preferences.kitchenPrinter58mm && (
-                <div className="text-xs rounded-full bg-green-100 px-2 py-1 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                  ✓ Conectada
+            <div className="space-y-2">
+              {availablePrinters.map((printer) => (
+                <div key={printer.id} className="flex items-center justify-between rounded border p-2 text-sm">
+                  <span className={printer.id === preferences.clientPrinterId ? "font-semibold text-foreground" : "text-muted-foreground"}>
+                    {printer.name}
+                  </span>
+                  <div className="flex gap-1">
+                    {printer.id !== preferences.clientPrinterId && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => savePreferences({ ...preferences, clientPrinterId: printer.id })}
+                      >
+                        Usar
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleRemovePrinter(printer.id)}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
                 </div>
-              )}
-            </div>
+              ))}
 
-            {preferences.kitchenPrinter58mm ? (
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">
-                  {preferences.kitchenPrinter58mm.name}
-                </p>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  className="w-full gap-2"
-                  onClick={unpairKitchenPrinter}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Desemparejar
-                </Button>
-              </div>
-            ) : (
               <Button
                 variant="outline"
                 size="sm"
                 className="w-full gap-2"
-                onClick={pairKitchenPrinter}
+                onClick={handleLinkPrinter}
+                disabled={isLinking}
               >
                 <Plus className="h-4 w-4" />
-                Emparejar Impresora
+                {isLinking ? "Buscando..." : "Vincular Impresora"}
               </Button>
-            )}
+            </div>
           </div>
 
           {/* Opciones */}
